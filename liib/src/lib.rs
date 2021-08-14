@@ -32,6 +32,7 @@ macro_rules! revec {
 			let mut size = liib::count_tts!($($x)*);
 			println!("size={:?}", size);
 			let mut temp_vec = Vec::with_capacity(size);
+			// This is probably _worse_ than calling .reverse :D
 			$(
 				temp_vec.insert(0, $x);
 			)*

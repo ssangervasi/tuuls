@@ -8,3 +8,5 @@ edition = "2018"
 
 [dependencies]
 liib = { path = "../liib/" }
+ansi_term = "0.12.1"
+termion = "1.5.5"
