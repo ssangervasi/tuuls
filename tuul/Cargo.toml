@@ -10,3 +10,4 @@ edition = "2018"
 liib = { path = "../liib/" }
 ansi_term = "0.12.1"
 termion = "1.5.5"
+crossterm = "0.18.2"

@@ -1,12 +1,63 @@
 #![allow(dead_code)]
+
+use core::time::Duration;
+use std::io::*;
+
 use liib;
 
 fn main() {
-    term()
+    term_crossterm()
 }
 
-fn term() {
-    use std::io::*;
+fn term_crossterm() {
+    use crossterm::{
+        cursor::{MoveDown, MoveTo, MoveToNextLine},
+        event::{poll, read, Event},
+        execute,
+        style::{Color, Print, ResetColor, SetForegroundColor},
+        terminal::{disable_raw_mode, enable_raw_mode, size, Clear, ClearType},
+    };
+
+    enable_raw_mode().unwrap();
+    {
+        let mut s = stdout();
+
+        execute!(s, Clear(ClearType::All), MoveTo(0, 0)).unwrap();
+
+        let (w, h) = size().unwrap();
+        execute!(
+            s,
+            SetForegroundColor(Color::Red),
+            Print(format!("Terminal Size: {}x{}\n", w, h)),
+            ResetColor
+        )
+        .unwrap();
+
+        execute!(s, MoveToNextLine(1)).unwrap();
+
+        while !poll(Duration::from_millis(500)).unwrap() {}
+        match read().unwrap() {
+            Event::Key(event) => {
+                execute!(s, MoveToNextLine(1)).unwrap();
+                execute!(s, Print(format!("{:?}", event))).unwrap();
+            }
+            _ => {}
+        }
+
+        execute!(s, MoveToNextLine(1)).unwrap();
+        execute!(
+            s,
+            SetForegroundColor(Color::Red),
+            Print("Yahoo"),
+            ResetColor
+        )
+        .unwrap();
+        execute!(s, MoveToNextLine(1)).unwrap();
+    }
+    disable_raw_mode().unwrap();
+}
+
+fn term_termion() {
     use termion::input::*;
     use termion::*;
 
@@ -23,7 +74,6 @@ fn term() {
     let si = stdin();
 
     use std::thread::sleep;
-    use std::time::Duration;
 
     loop {
         sleep(Duration::from_millis(100));
@@ -40,12 +90,6 @@ fn term() {
         }
     }
 }
-
-// macro_rules! w {
-//     () => {
-//         write()
-//     };
-// }
 
 fn ansi() {
     use ansi_term::*;
