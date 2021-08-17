@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+#![allow(unused_macros)]
 
 use core::time::Duration;
 use std::io::*;
@@ -9,54 +10,125 @@ fn main() {
     term_crossterm()
 }
 
+macro_rules! ex {
+    ( $( $x:expr ),* ) => {
+        {
+            use crossterm::{
+                execute,
+            };
+            execute!(
+                stdout(),
+                $(
+                    $x,
+                )*
+            )
+            .unwrap();
+        }
+    };
+}
+
+macro_rules! rex {
+    ( $( $x:expr ),* ) => {
+        {
+            use crossterm::{
+                execute,
+                cursor::{SavePosition, RestorePosition},
+            };
+            execute!(
+                stdout(),
+                SavePosition,
+                $(
+                    $x,
+                )*
+                RestorePosition
+            )
+            .unwrap();
+        }
+    };
+}
+
 fn term_crossterm() {
     use crossterm::{
-        cursor::{MoveTo, MoveToNextLine},
+        cursor::{position, MoveTo, MoveToNextLine},
         event::{poll, read, Event, KeyCode, KeyEvent},
         execute,
-        style::{Color, Print, ResetColor, SetForegroundColor},
+        style::{Color, Print, SetForegroundColor},
         terminal::{disable_raw_mode, enable_raw_mode, size, Clear, ClearType},
     };
 
     enable_raw_mode().unwrap();
     {
-        let mut s = stdout();
-
-        execute!(s, Clear(ClearType::All), MoveTo(0, 0)).unwrap();
-
-        let (w, h) = size().unwrap();
-        execute!(
-            s,
-            SetForegroundColor(Color::Red),
-            Print(format!("Terminal Size: {}x{}\n", w, h)),
-            ResetColor
-        )
-        .unwrap();
-
-        execute!(s, MoveToNextLine(1)).unwrap();
+        ex!(Clear(ClearType::All), MoveTo(0, 0));
 
         loop {
+            let (w, h) = size().unwrap_or((0, 0));
+            let (c, r): (i32, i32) = {
+                let p = position().unwrap_or((0, 0));
+                (p.0 as i32, p.1 as i32)
+            };
+
+            rex!(
+                MoveTo(0, 0),
+                SetForegroundColor(Color::Red),
+                Print(format!("Size: {}x{} | Pos: {}x{}", w, h, c, r))
+            );
+
             while !poll(Duration::from_millis(500)).unwrap() {}
+
             match read().unwrap() {
                 Event::Key(event) => {
-                    execute!(s, Print(format!("{:?}", event))).unwrap();
-                    execute!(s, MoveToNextLine(1)).unwrap();
-                    match event {
+                    rex!(
+                        MoveTo(0, 1),
+                        Clear(ClearType::CurrentLine),
+                        SetForegroundColor(Color::Blue),
+                        Print(format!("{:?}", event))
+                    );
+
+                    let result: Option<(i32, i32)> = match event {
                         KeyEvent {
-                            code: KeyCode::Left | KeyCode::Right | KeyCode::Up | KeyCode::Down,
+                            code: KeyCode::Left,
                             modifiers: _,
-                        } => {
-                            execute!(s, SetForegroundColor(Color::Red), Print("---"), ResetColor)
-                                .unwrap();
-                            execute!(s, MoveToNextLine(1)).unwrap();
+                        } => Some((-1, 0)),
+                        KeyEvent {
+                            code: KeyCode::Right,
+                            modifiers: _,
+                        } => Some((1, 0)),
+
+                        KeyEvent {
+                            code: KeyCode::Up,
+                            modifiers: _,
+                        } => Some((0, -1)),
+
+                        KeyEvent {
+                            code: KeyCode::Down,
+                            modifiers: _,
+                        } => Some((0, 1)),
+
+                        KeyEvent {
+                            code: KeyCode::Char('c') | KeyCode::Esc,
+                            modifiers: _,
+                        } => break,
+
+                        _ => None,
+                    };
+                    match result {
+                        Some((dc, dr)) => {
+                            let nc: u16 = ((c + dc).max(0) as u16).min(w);
+                            let nr: u16 = ((r + dr).max(0) as u16).min(h);
+                            rex!(
+                                MoveTo(0, 3),
+                                Clear(ClearType::CurrentLine),
+                                Print(format!("{:?}", (nc, nr)))
+                            );
+                            ex!(MoveTo(nc, nr))
                         }
-                        _ => break,
+                        _ => {}
                     }
                 }
                 _ => {}
             }
         }
-        execute!(s, MoveToNextLine(1)).unwrap();
+        ex!(MoveToNextLine(2));
     }
     disable_raw_mode().unwrap();
 }
