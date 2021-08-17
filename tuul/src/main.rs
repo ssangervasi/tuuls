@@ -11,8 +11,8 @@ fn main() {
 
 fn term_crossterm() {
     use crossterm::{
-        cursor::{MoveDown, MoveTo, MoveToNextLine},
-        event::{poll, read, Event},
+        cursor::{MoveTo, MoveToNextLine},
+        event::{poll, read, Event, KeyCode, KeyEvent},
         execute,
         style::{Color, Print, ResetColor, SetForegroundColor},
         terminal::{disable_raw_mode, enable_raw_mode, size, Clear, ClearType},
@@ -35,23 +35,27 @@ fn term_crossterm() {
 
         execute!(s, MoveToNextLine(1)).unwrap();
 
-        while !poll(Duration::from_millis(500)).unwrap() {}
-        match read().unwrap() {
-            Event::Key(event) => {
-                execute!(s, MoveToNextLine(1)).unwrap();
-                execute!(s, Print(format!("{:?}", event))).unwrap();
+        loop {
+            while !poll(Duration::from_millis(500)).unwrap() {}
+            match read().unwrap() {
+                Event::Key(event) => {
+                    execute!(s, Print(format!("{:?}", event))).unwrap();
+                    execute!(s, MoveToNextLine(1)).unwrap();
+                    match event {
+                        KeyEvent {
+                            code: KeyCode::Left | KeyCode::Right | KeyCode::Up | KeyCode::Down,
+                            modifiers: _,
+                        } => {
+                            execute!(s, SetForegroundColor(Color::Red), Print("---"), ResetColor)
+                                .unwrap();
+                            execute!(s, MoveToNextLine(1)).unwrap();
+                        }
+                        _ => break,
+                    }
+                }
+                _ => {}
             }
-            _ => {}
         }
-
-        execute!(s, MoveToNextLine(1)).unwrap();
-        execute!(
-            s,
-            SetForegroundColor(Color::Red),
-            Print("Yahoo"),
-            ResetColor
-        )
-        .unwrap();
         execute!(s, MoveToNextLine(1)).unwrap();
     }
     disable_raw_mode().unwrap();
