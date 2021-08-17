@@ -84,43 +84,52 @@ fn term_crossterm() {
                         Print(format!("{:?}", event))
                     );
 
-                    let result: Option<(i32, i32)> = match event {
+                    enum Res {
+                        Move((i32, i32)),
+                        Write(char),
+                        None,
+                    }
+
+                    let result: Res = match event {
                         KeyEvent {
                             code: KeyCode::Left,
                             modifiers: _,
-                        } => Some((-1, 0)),
+                        } => Res::Move((-1, 0)),
                         KeyEvent {
                             code: KeyCode::Right,
                             modifiers: _,
-                        } => Some((1, 0)),
+                        } => Res::Move((1, 0)),
 
                         KeyEvent {
                             code: KeyCode::Up,
                             modifiers: _,
-                        } => Some((0, -1)),
+                        } => Res::Move((0, -1)),
 
                         KeyEvent {
                             code: KeyCode::Down,
                             modifiers: _,
-                        } => Some((0, 1)),
+                        } => Res::Move((0, 1)),
 
                         KeyEvent {
-                            code: KeyCode::Char('c') | KeyCode::Esc,
+                            code: KeyCode::Esc,
                             modifiers: _,
                         } => break,
+                        KeyEvent {
+                            code: KeyCode::Char(ch),
+                            modifiers: _,
+                        } => Res::Write(ch),
 
-                        _ => None,
+                        _ => Res::None,
                     };
                     match result {
-                        Some((dc, dr)) => {
+                        Res::Move((dc, dr)) => {
                             let nc: u16 = ((c + dc).max(0) as u16).min(w);
                             let nr: u16 = ((r + dr).max(0) as u16).min(h);
-                            rex!(
-                                MoveTo(0, 3),
-                                Clear(ClearType::CurrentLine),
-                                Print(format!("{:?}", (nc, nr)))
-                            );
                             ex!(MoveTo(nc, nr))
+                        }
+
+                        Res::Write(ch) => {
+                            ex!(Print(ch), MoveTo(c as u16, r as u16));
                         }
                         _ => {}
                     }
