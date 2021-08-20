@@ -140,7 +140,7 @@ pub fn term_crossterm() -> crossterm::Result<()> {
                     }
 
                     let result: Res = match event {
-                        // Jump move
+                        // Jump ends
                         KeyEvent {
                             code: KeyCode::Left,
                             modifiers: KeyModifiers::CONTROL,
@@ -158,6 +158,52 @@ pub fn term_crossterm() -> crossterm::Result<()> {
                             code: KeyCode::Down,
                             modifiers: KeyModifiers::CONTROL,
                         } => Res::Move((0, h)),
+
+                        // Jump boundaries
+                        KeyEvent {
+                            code: KeyCode::Left | KeyCode::Right | KeyCode::Up | KeyCode::Down,
+                            modifiers: KeyModifiers::ALT,
+                        } => {
+                            let mut res = Res::Move((0, 0));
+                            let match_blank = screen.read((c, r)) == BLANK;
+
+                            match event.code {
+                                KeyCode::Left => {
+                                    for i in (0..=c).rev() {
+                                        if (screen.read((i, r)) == BLANK) != match_blank {
+                                            res = Res::Move((i - c, 0));
+                                            break;
+                                        }
+                                    }
+                                }
+                                KeyCode::Right => {
+                                    for i in (c..=w) {
+                                        if (screen.read((i, r)) == BLANK) != match_blank {
+                                            res = Res::Move((i - c, 0));
+                                            break;
+                                        }
+                                    }
+                                }
+                                KeyCode::Up => {
+                                    for i in (0..=r).rev() {
+                                        if (screen.read((c, i)) == BLANK) != match_blank {
+                                            res = Res::Move((0, i - r));
+                                            break;
+                                        }
+                                    }
+                                }
+                                KeyCode::Down => {
+                                    for i in (r..=h) {
+                                        if (screen.read((c, i)) == BLANK) != match_blank {
+                                            res = Res::Move((0, i - r));
+                                            break;
+                                        }
+                                    }
+                                }
+                                _ => {}
+                            }
+                            res
+                        }
 
                         // Jump
                         KeyEvent {
