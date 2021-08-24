@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+#![allow(unused_imports)]
 #![allow(unused_macros)]
 
 use core::time::Duration;
@@ -7,7 +8,7 @@ use crossterm::{
     event::{poll, read, Event, KeyCode, KeyEvent, KeyModifiers},
     execute,
     style::{Color, Print, SetForegroundColor},
-    terminal::{disable_raw_mode, enable_raw_mode, size, Clear, ClearType},
+    terminal::{disable_raw_mode, enable_raw_mode, size, Clear, ClearType, ScrollDown},
 };
 use std::collections::HashMap;
 use std::io::*;
@@ -78,71 +79,97 @@ impl Screen {
 }
 
 pub fn term_crossterm() -> crossterm::Result<()> {
+    // ex!(ScrollDown(size().unwrap_or((0, 0)).1));
+    let (w, h) = size().unwrap_or((0, 0));
+
+    ex!(Print("--A--\n"));
+
+    // enable_raw_mode()?;
+    // {
+    //     // ex!(Clear(ClearType::All), MoveTo(0, 0));
+    //     // edit_loop()?;
+    //     // ex!(MoveToNextLine(2));
+    //     ex!(MoveTo(0, 0), Print("|^"));
+    //     ex!(MoveTo(w - 2, 0), Print("^|"));
+    //     ex!(MoveTo(0, h - 1), Print("|_"));
+    //     ex!(MoveTo(w - 2, h - 1), Print("_|"));
+    //     ex!(MoveTo(w / 2 - 5, h / 2), Print("-Middle-"));
+
+    //     while !poll(Duration::from_millis(500))? {}
+    // }
+    // disable_raw_mode()?;
+
+    // ex!(MoveTo(0, h - 1));
+    ex!(MoveTo(0, 0));
+    ex!(Print("--B--\n"));
+    ex!(ScrollDown(4));
+    ex!(Print("--C--\n"));
+    ex!(ScrollDown(3));
+    ex!(Print("--D--\n"));
+    ex!(ScrollDown(2));
+    ex!(Print("--E--\n"));
+
+    Ok(())
+}
+
+fn edit_loop() -> crossterm::Result<()> {
     let mut screen = Screen::default();
 
-    enable_raw_mode()?;
-    {
-        ex!(Clear(ClearType::All), MoveTo(0, 0));
+    loop {
+        let (w, h) = {
+            let p = size().unwrap_or((0, 0));
+            (p.0 as i32, p.1 as i32)
+        };
+        let (c, r): (i32, i32) = {
+            let p = position().unwrap_or((0, 0));
+            (p.0 as i32, p.1 as i32)
+        };
 
-        loop {
-            let (w, h) = {
-                let p = size().unwrap_or((0, 0));
-                (p.0 as i32, p.1 as i32)
-            };
-            let (c, r): (i32, i32) = {
-                let p = position().unwrap_or((0, 0));
-                (p.0 as i32, p.1 as i32)
-            };
+        rex!(
+            MoveTo(0, 0),
+            Clear(ClearType::CurrentLine),
+            SetForegroundColor(Color::Red),
+            Print(format!(
+                "Size: {}x{} | Pos: {}x{} | Cur: {} | Screen Mem: {}",
+                w,
+                h,
+                c,
+                r,
+                screen.read((c, r)),
+                screen.mem()
+            ))
+        );
 
-            rex!(
-                MoveTo(0, 0),
-                Clear(ClearType::CurrentLine),
-                SetForegroundColor(Color::Red),
-                Print(format!(
-                    "Size: {}x{} | Pos: {}x{} | Cur: {} | Screen Mem: {}",
-                    w,
-                    h,
-                    c,
-                    r,
-                    screen.read((c, r)),
-                    screen.mem()
-                ))
-            );
+        while !poll(Duration::from_millis(500))? {}
 
-            while !poll(Duration::from_millis(500))? {}
+        match read()? {
+            Event::Key(event) => {
+                rex!(
+                    MoveTo(0, 1),
+                    Clear(ClearType::CurrentLine),
+                    SetForegroundColor(Color::Blue),
+                    Print(format!("{:?}", event))
+                );
 
-            match read()? {
-                Event::Key(event) => {
-                    rex!(
-                        MoveTo(0, 1),
-                        Clear(ClearType::CurrentLine),
-                        SetForegroundColor(Color::Blue),
-                        Print(format!("{:?}", event))
-                    );
-
-                    let result: Res = process_event(&mut screen, event, (w, h), (c, r));
-                    match result {
-                        Res::Move((dc, dr)) => {
-                            let nc: u16 = (c + dc).max(0).min(w) as u16;
-                            let nr: u16 = (r + dr).max(0).min(h) as u16;
-                            ex!(MoveTo(nc, nr))
-                        }
-
-                        Res::Write(ch) => {
-                            screen.write((c, r), ch);
-                            ex!(Print(ch), MoveTo(c as u16, r as u16));
-                        }
-                        Res::Quit => break,
-                        Res::None => {}
+                let result: Res = process_event(&mut screen, event, (w, h), (c, r));
+                match result {
+                    Res::Move((dc, dr)) => {
+                        let nc: u16 = (c + dc).max(0).min(w) as u16;
+                        let nr: u16 = (r + dr).max(0).min(h) as u16;
+                        ex!(MoveTo(nc, nr))
                     }
-                }
-                _ => {}
-            }
-        }
-        ex!(MoveToNextLine(2));
-    }
 
-    disable_raw_mode()?;
+                    Res::Write(ch) => {
+                        screen.write((c, r), ch);
+                        ex!(Print(ch), MoveTo(c as u16, r as u16));
+                    }
+                    Res::Quit => break,
+                    Res::None => {}
+                }
+            }
+            _ => {}
+        }
+    }
 
     Ok(())
 }
