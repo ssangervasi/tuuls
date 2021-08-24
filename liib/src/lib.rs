@@ -2,48 +2,43 @@
 #![allow(unused_macros)]
 
 use core::time::Duration;
+use crossterm::{
+    cursor::{position, MoveTo, MoveToNextLine, RestorePosition, SavePosition},
+    event::{poll, read, Event, KeyCode, KeyEvent, KeyModifiers},
+    execute,
+    style::{Color, Print, SetForegroundColor},
+    terminal::{disable_raw_mode, enable_raw_mode, size, Clear, ClearType},
+};
+use std::collections::HashMap;
 use std::io::*;
 
 pub mod cro;
 
 macro_rules! ex {
     ( $( $x:expr ),* ) => {
-        {
-            use crossterm::{
-                execute,
-            };
-            execute!(
-                stdout(),
-                $(
-                    $x,
-                )*
-            )
-            .unwrap();
-        }
-    };
+        execute!(
+            stdout(),
+            $(
+                $x,
+            )*
+        )
+        .unwrap();
+    }
 }
 
 macro_rules! rex {
     ( $( $x:expr ),* ) => {
-        {
-            use crossterm::{
-                execute,
-                cursor::{SavePosition, RestorePosition},
-            };
-            execute!(
-                stdout(),
-                SavePosition,
-                $(
-                    $x,
-                )*
-                RestorePosition
-            )
-            .unwrap();
-        }
+        execute!(
+            stdout(),
+            SavePosition,
+            $(
+                $x,
+            )*
+            RestorePosition
+        )
+        .unwrap();
     };
 }
-
-use std::collections::HashMap;
 
 type Coord = (i32, i32);
 const BLANK: char = ' ';
@@ -83,14 +78,6 @@ impl Screen {
 }
 
 pub fn term_crossterm() -> crossterm::Result<()> {
-    use crossterm::{
-        cursor::{position, MoveTo, MoveToNextLine},
-        event::{poll, read, Event, KeyCode, KeyEvent, KeyModifiers},
-        execute,
-        style::{Color, Print, SetForegroundColor},
-        terminal::{disable_raw_mode, enable_raw_mode, size, Clear, ClearType},
-    };
-
     let mut screen = Screen::default();
 
     enable_raw_mode()?;
@@ -133,112 +120,7 @@ pub fn term_crossterm() -> crossterm::Result<()> {
                         Print(format!("{:?}", event))
                     );
 
-                    enum Res {
-                        Move((i32, i32)),
-                        Write(char),
-                        None,
-                    }
-
-                    let result: Res = match event {
-                        // Jump ends
-                        KeyEvent {
-                            code: KeyCode::Left,
-                            modifiers: KeyModifiers::CONTROL,
-                        } => Res::Move((-w, 0)),
-                        KeyEvent {
-                            code: KeyCode::Right,
-                            modifiers: KeyModifiers::CONTROL,
-                        } => Res::Move((w, 0)),
-
-                        KeyEvent {
-                            code: KeyCode::Up,
-                            modifiers: KeyModifiers::CONTROL,
-                        } => Res::Move((0, -h)),
-                        KeyEvent {
-                            code: KeyCode::Down,
-                            modifiers: KeyModifiers::CONTROL,
-                        } => Res::Move((0, h)),
-
-                        // Jump boundaries
-                        KeyEvent {
-                            code: KeyCode::Left | KeyCode::Right | KeyCode::Up | KeyCode::Down,
-                            modifiers: KeyModifiers::ALT,
-                        } => {
-                            let mut res = Res::Move((0, 0));
-                            let match_blank = screen.read((c, r)) == BLANK;
-
-                            match event.code {
-                                KeyCode::Left => {
-                                    for i in (0..=c).rev() {
-                                        if (screen.read((i, r)) == BLANK) != match_blank {
-                                            res = Res::Move((i - c, 0));
-                                            break;
-                                        }
-                                    }
-                                }
-                                KeyCode::Right => {
-                                    for i in (c..=w) {
-                                        if (screen.read((i, r)) == BLANK) != match_blank {
-                                            res = Res::Move((i - c, 0));
-                                            break;
-                                        }
-                                    }
-                                }
-                                KeyCode::Up => {
-                                    for i in (0..=r).rev() {
-                                        if (screen.read((c, i)) == BLANK) != match_blank {
-                                            res = Res::Move((0, i - r));
-                                            break;
-                                        }
-                                    }
-                                }
-                                KeyCode::Down => {
-                                    for i in (r..=h) {
-                                        if (screen.read((c, i)) == BLANK) != match_blank {
-                                            res = Res::Move((0, i - r));
-                                            break;
-                                        }
-                                    }
-                                }
-                                _ => {}
-                            }
-                            res
-                        }
-
-                        // Jump
-                        KeyEvent {
-                            code: KeyCode::Left,
-                            modifiers: _,
-                        } => Res::Move((-1, 0)),
-                        KeyEvent {
-                            code: KeyCode::Right,
-                            modifiers: _,
-                        } => Res::Move((1, 0)),
-
-                        KeyEvent {
-                            code: KeyCode::Up,
-                            modifiers: _,
-                        } => Res::Move((0, -1)),
-                        KeyEvent {
-                            code: KeyCode::Down,
-                            modifiers: _,
-                        } => Res::Move((0, 1)),
-
-                        // Quit
-                        KeyEvent {
-                            code: KeyCode::Char('c'),
-                            modifiers: KeyModifiers::CONTROL,
-                        } => break,
-
-                        // Write
-                        KeyEvent {
-                            code: KeyCode::Char(ch),
-                            modifiers: _,
-                        } => Res::Write(ch),
-
-                        // Unhandled
-                        _ => Res::None,
-                    };
+                    let result: Res = process_event(&mut screen, event, (w, h), (c, r));
                     match result {
                         Res::Move((dc, dr)) => {
                             let nc: u16 = (c + dc).max(0).min(w) as u16;
@@ -250,7 +132,8 @@ pub fn term_crossterm() -> crossterm::Result<()> {
                             screen.write((c, r), ch);
                             ex!(Print(ch), MoveTo(c as u16, r as u16));
                         }
-                        _ => {}
+                        Res::Quit => break,
+                        Res::None => {}
                     }
                 }
                 _ => {}
@@ -263,3 +146,146 @@ pub fn term_crossterm() -> crossterm::Result<()> {
 
     Ok(())
 }
+
+enum Res {
+    Move((i32, i32)),
+    Write(char),
+    Quit,
+    None,
+}
+
+fn process_event(screen: &mut Screen, event: KeyEvent, (w, h): Coord, (c, r): Coord) -> Res {
+    match event {
+        // Jump ends
+        KeyEvent {
+            code: KeyCode::Left,
+            modifiers: KeyModifiers::CONTROL,
+        } => Res::Move((-w, 0)),
+        KeyEvent {
+            code: KeyCode::Right,
+            modifiers: KeyModifiers::CONTROL,
+        } => Res::Move((w, 0)),
+
+        KeyEvent {
+            code: KeyCode::Up,
+            modifiers: KeyModifiers::CONTROL,
+        } => Res::Move((0, -h)),
+        KeyEvent {
+            code: KeyCode::Down,
+            modifiers: KeyModifiers::CONTROL,
+        } => Res::Move((0, h)),
+
+        // Jump boundaries
+        KeyEvent {
+            code: KeyCode::Left | KeyCode::Right | KeyCode::Up | KeyCode::Down,
+            modifiers: KeyModifiers::ALT,
+        } => {
+            let mut res = Res::Move((0, 0));
+            let match_blank = screen.read((c, r)) == BLANK;
+
+            match event.code {
+                KeyCode::Left => {
+                    for i in (0..=c).rev() {
+                        if (screen.read((i, r)) == BLANK) != match_blank {
+                            res = Res::Move((i - c, 0));
+                        }
+                    }
+                }
+                KeyCode::Right => {
+                    for i in c..=w {
+                        if (screen.read((i, r)) == BLANK) != match_blank {
+                            res = Res::Move((i - c, 0));
+                        }
+                    }
+                }
+                KeyCode::Up => {
+                    for i in (0..=r).rev() {
+                        if (screen.read((c, i)) == BLANK) != match_blank {
+                            res = Res::Move((0, i - r));
+                        }
+                    }
+                }
+                KeyCode::Down => {
+                    for i in r..=h {
+                        if (screen.read((c, i)) == BLANK) != match_blank {
+                            res = Res::Move((0, i - r));
+                        }
+                    }
+                }
+                _ => {}
+            }
+            res
+        }
+
+        // Jump
+        KeyEvent {
+            code: KeyCode::Left,
+            modifiers: _,
+        } => Res::Move((-1, 0)),
+        KeyEvent {
+            code: KeyCode::Right,
+            modifiers: _,
+        } => Res::Move((1, 0)),
+
+        KeyEvent {
+            code: KeyCode::Up,
+            modifiers: _,
+        } => Res::Move((0, -1)),
+        KeyEvent {
+            code: KeyCode::Down,
+            modifiers: _,
+        } => Res::Move((0, 1)),
+
+        // Quit
+        KeyEvent {
+            code: KeyCode::Char('c'),
+            modifiers: KeyModifiers::CONTROL,
+        } => Res::Quit,
+
+        // Write
+        KeyEvent {
+            code: KeyCode::Char(ch),
+            modifiers: _,
+        } => Res::Write(ch),
+
+        // Unhandled
+        _ => Res::None,
+    }
+}
+
+fn smerf() {
+    let mut d = derf();
+    d[0] = 40;
+    berf(&mut d);
+    d[0] = 40;
+}
+
+fn derf() -> Vec<i32> {
+    let mut t = vec![1, 2];
+    berf(&mut t);
+    t[1] = t[0];
+    t
+}
+
+fn berf(b: &mut Vec<i32>) {
+    let c = b;
+    // b[0] = 10;
+    c[0] = 12;
+}
+
+// fn smerf() {
+//     let mut d = derf();
+//     d[0] = 40;
+// }
+
+// fn derf() -> [i32; 2] {
+//     // let t = vec![1, 2];
+//     let mut t = [1, 2];
+//     berf(&mut t);
+//     t[1] = t[0];
+//     t
+// }
+
+// fn berf(b: &mut [i32; 2]) {
+//     b[0] = 10
+// }
