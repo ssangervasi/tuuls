@@ -8,10 +8,25 @@ use crossterm::{
     event::{poll, read, Event, KeyCode, KeyEvent, KeyModifiers},
     execute,
     style::{Color, Print, SetForegroundColor},
-    terminal::{disable_raw_mode, enable_raw_mode, size, Clear, ClearType, ScrollDown},
+    terminal::{
+        disable_raw_mode,
+        enable_raw_mode,
+        size,
+        Clear,
+        ClearType,
+        //
+        ScrollDown as ScrollBack,
+        //
+        ScrollDown,
+        //
+        ScrollUp as ScrollForward,
+        //
+        ScrollUp,
+    },
 };
 use std::collections::HashMap;
 use std::io::*;
+use std::thread::sleep;
 
 pub mod cro;
 
@@ -80,9 +95,9 @@ impl Screen {
 
 pub fn term_crossterm() -> crossterm::Result<()> {
     // ex!(ScrollDown(size().unwrap_or((0, 0)).1));
-    let (w, h) = size().unwrap_or((0, 0));
+    let (_w, h) = size().unwrap_or((0, 0));
 
-    ex!(Print("--A--\n"));
+    ex!(Print("\n--A--\n"));
 
     // enable_raw_mode()?;
     // {
@@ -99,15 +114,34 @@ pub fn term_crossterm() -> crossterm::Result<()> {
     // }
     // disable_raw_mode()?;
 
-    // ex!(MoveTo(0, h - 1));
     ex!(MoveTo(0, 0));
-    ex!(Print("--B--\n"));
-    ex!(ScrollDown(4));
-    ex!(Print("--C--\n"));
-    ex!(ScrollDown(3));
-    ex!(Print("--D--\n"));
-    ex!(ScrollDown(2));
-    ex!(Print("--E--\n"));
+    for i in 0..(2 * h) {
+        ex!(Print(format!("{}\n", i)));
+        sleep(Duration::from_millis(50));
+    }
+
+    ex!(MoveTo(0, 1), Print("Scroll up"));
+    sleep(Duration::from_millis(2000));
+    ex!(ScrollUp(h / 2));
+    ex!(MoveTo(0, 2), Print("^^^^^"));
+    sleep(Duration::from_millis(2000));
+
+    ex!(MoveTo(0, 3), Print("Scroll down"));
+    sleep(Duration::from_millis(2000));
+    ex!(ScrollDown(h / 2));
+    ex!(MoveTo(0, 4), Print("VVVV"));
+    sleep(Duration::from_millis(2000));
+
+    ex!(Print("Done"));
+
+    // ex!(MoveTo(0, 0));
+    // ex!(Print("--B--"));
+    // ex!(ScrollForward(5));
+    // ex!(Print("--CC--"));
+    // ex!(ScrollForward(10));
+    // ex!(Print("--DDD--"));
+    // ex!(ScrollForward(20));
+    // ex!(Print("--EEEE--"));
 
     Ok(())
 }
