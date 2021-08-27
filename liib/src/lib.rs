@@ -12,15 +12,11 @@ use crossterm::{
         disable_raw_mode,
         enable_raw_mode,
         size,
+        //
         Clear,
         ClearType,
         //
-        ScrollDown as ScrollBack,
-        //
         ScrollDown,
-        //
-        ScrollUp as ScrollForward,
-        //
         ScrollUp,
     },
 };
@@ -29,6 +25,7 @@ use std::io::*;
 use std::thread::sleep;
 
 pub mod cro;
+pub mod vid;
 
 macro_rules! ex {
     ( $( $x:expr ),* ) => {
@@ -94,25 +91,23 @@ impl Screen {
 }
 
 pub fn term_crossterm() -> crossterm::Result<()> {
-    // ex!(ScrollDown(size().unwrap_or((0, 0)).1));
+    edit_loop()?;
+
+    // ex!(Clear(ClearType::All), MoveTo(0, 0));
+
+    Ok(())
+}
+
+fn make_room() {}
+
+/**
+ * What a fun lesson in how up/down just shift the buffer contents and
+ * dlete lines from the ends. Not nearly as useful.
+ */
+pub fn scroll_test() -> crossterm::Result<()> {
     let (_w, h) = size().unwrap_or((0, 0));
 
     ex!(Print("\n--A--\n"));
-
-    // enable_raw_mode()?;
-    // {
-    //     // ex!(Clear(ClearType::All), MoveTo(0, 0));
-    //     // edit_loop()?;
-    //     // ex!(MoveToNextLine(2));
-    //     ex!(MoveTo(0, 0), Print("|^"));
-    //     ex!(MoveTo(w - 2, 0), Print("^|"));
-    //     ex!(MoveTo(0, h - 1), Print("|_"));
-    //     ex!(MoveTo(w - 2, h - 1), Print("_|"));
-    //     ex!(MoveTo(w / 2 - 5, h / 2), Print("-Middle-"));
-
-    //     while !poll(Duration::from_millis(500))? {}
-    // }
-    // disable_raw_mode()?;
 
     ex!(MoveTo(0, 0));
     for i in 0..(2 * h) {
@@ -134,21 +129,13 @@ pub fn term_crossterm() -> crossterm::Result<()> {
 
     ex!(Print("Done"));
 
-    // ex!(MoveTo(0, 0));
-    // ex!(Print("--B--"));
-    // ex!(ScrollForward(5));
-    // ex!(Print("--CC--"));
-    // ex!(ScrollForward(10));
-    // ex!(Print("--DDD--"));
-    // ex!(ScrollForward(20));
-    // ex!(Print("--EEEE--"));
-
     Ok(())
 }
 
 fn edit_loop() -> crossterm::Result<()> {
     let mut screen = Screen::default();
 
+    enable_raw_mode()?;
     loop {
         let (w, h) = {
             let p = size().unwrap_or((0, 0));
@@ -176,34 +163,32 @@ fn edit_loop() -> crossterm::Result<()> {
 
         while !poll(Duration::from_millis(500))? {}
 
-        match read()? {
-            Event::Key(event) => {
-                rex!(
-                    MoveTo(0, 1),
-                    Clear(ClearType::CurrentLine),
-                    SetForegroundColor(Color::Blue),
-                    Print(format!("{:?}", event))
-                );
+        if let Event::Key(event) = read()? {
+            rex!(
+                MoveTo(0, 1),
+                Clear(ClearType::CurrentLine),
+                SetForegroundColor(Color::Blue),
+                Print(format!("{:?}", event))
+            );
 
-                let result: Res = process_event(&mut screen, event, (w, h), (c, r));
-                match result {
-                    Res::Move((dc, dr)) => {
-                        let nc: u16 = (c + dc).max(0).min(w) as u16;
-                        let nr: u16 = (r + dr).max(0).min(h) as u16;
-                        ex!(MoveTo(nc, nr))
-                    }
-
-                    Res::Write(ch) => {
-                        screen.write((c, r), ch);
-                        ex!(Print(ch), MoveTo(c as u16, r as u16));
-                    }
-                    Res::Quit => break,
-                    Res::None => {}
+            let result: Res = process_event(&mut screen, event, (w, h), (c, r));
+            match result {
+                Res::Move((dc, dr)) => {
+                    let nc: u16 = (c + dc).max(0).min(w) as u16;
+                    let nr: u16 = (r + dr).max(0).min(h) as u16;
+                    ex!(MoveTo(nc, nr))
                 }
+
+                Res::Write(ch) => {
+                    screen.write((c, r), ch);
+                    ex!(Print(ch), MoveTo(c as u16, r as u16));
+                }
+                Res::Quit => break,
+                Res::None => {}
             }
-            _ => {}
         }
     }
+    disable_raw_mode()?;
 
     Ok(())
 }
@@ -313,40 +298,3 @@ fn process_event(screen: &mut Screen, event: KeyEvent, (w, h): Coord, (c, r): Co
         _ => Res::None,
     }
 }
-
-fn smerf() {
-    let mut d = derf();
-    d[0] = 40;
-    berf(&mut d);
-    d[0] = 40;
-}
-
-fn derf() -> Vec<i32> {
-    let mut t = vec![1, 2];
-    berf(&mut t);
-    t[1] = t[0];
-    t
-}
-
-fn berf(b: &mut Vec<i32>) {
-    let c = b;
-    // b[0] = 10;
-    c[0] = 12;
-}
-
-// fn smerf() {
-//     let mut d = derf();
-//     d[0] = 40;
-// }
-
-// fn derf() -> [i32; 2] {
-//     // let t = vec![1, 2];
-//     let mut t = [1, 2];
-//     berf(&mut t);
-//     t[1] = t[0];
-//     t
-// }
-
-// fn berf(b: &mut [i32; 2]) {
-//     b[0] = 10
-// }
