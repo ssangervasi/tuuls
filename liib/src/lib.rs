@@ -6,7 +6,7 @@ use core::time::Duration;
 use crossterm::{
     cursor::{position, MoveTo, MoveToNextLine, RestorePosition, SavePosition},
     event::{poll, read, Event, KeyCode, KeyEvent, KeyModifiers},
-    execute,
+    execute, queue,
     style::{Color, Print, SetForegroundColor},
     terminal::{
         disable_raw_mode,
@@ -21,11 +21,11 @@ use crossterm::{
     },
 };
 use std::collections::HashMap;
+use std::convert::TryInto;
 use std::io::*;
 use std::thread::sleep;
 
 pub mod cro;
-pub mod vid;
 
 macro_rules! ex {
     ( $( $x:expr ),* ) => {
@@ -53,24 +53,28 @@ macro_rules! rex {
     };
 }
 
-type Coord = (i32, i32);
-const BLANK: char = ' ';
+pub type Coord = (i32, i32);
+pub const BLANK: char = ' ';
 
 #[derive(Clone, Debug)]
-struct Screen {
+pub struct Screen {
+    width: i32,
+    height: i32,
     hash_map: HashMap<Coord, char>,
 }
 
 impl Default for Screen {
     fn default() -> Self {
         Self {
+            width: 100,
+            height: 100,
             hash_map: HashMap::with_capacity(10 * 10),
         }
     }
 }
 
 impl Screen {
-    fn write(&mut self, coord: Coord, ch: char) -> char {
+    pub fn write(&mut self, coord: Coord, ch: char) -> char {
         match ch {
             BLANK => self.hash_map.remove(&coord),
             _ => self.hash_map.insert(coord, ch),
@@ -78,7 +82,7 @@ impl Screen {
         .unwrap_or(BLANK)
     }
 
-    fn read(&mut self, coord: Coord) -> char {
+    pub fn read(&self, coord: Coord) -> char {
         match self.hash_map.get(&coord) {
             Some(&ch) => ch,
             None => BLANK,
@@ -88,17 +92,69 @@ impl Screen {
     fn mem(&self) -> usize {
         (std::mem::size_of::<Coord>() + std::mem::size_of::<char>()) * self.hash_map.len()
     }
+
+    fn height(&self) -> i32 {
+        *self.hash_map.keys().map(|(_, r)| r).max().unwrap_or(&0)
+    }
+
+    fn width(&self) -> i32 {
+        *self.hash_map.keys().map(|(c, _)| c).max().unwrap_or(&0)
+    }
 }
 
-pub fn term_crossterm() -> crossterm::Result<()> {
-    edit_loop()?;
-
-    // ex!(Clear(ClearType::All), MoveTo(0, 0));
+pub fn dump_screen(screen: Screen) -> crossterm::Result<()> {
+    enable_raw_mode()?;
+    let mut stdout = stdout();
+    for r in 0..=(screen.height()) {
+        for c in 0..=(screen.width()) {
+            queue!(
+                stdout,
+                MoveTo(c as u16, r as u16),
+                Print(screen.read((c, r)))
+            )?;
+        }
+    }
+    stdout.flush()?;
+    disable_raw_mode()?;
 
     Ok(())
 }
 
-fn make_room() {}
+#[test]
+fn test_dump() {
+    let mut screen = Screen::default();
+    screen.write((0, 0), 'a');
+    screen.write((0, 1), 'b');
+    screen.write((0, 2), 'd');
+    screen.write((0, 3), 'e');
+    screen.write((0, 4), 'f');
+
+    screen.write((5, 0), 'a');
+    screen.write((5, 1), 'b');
+    screen.write((5, 2), 'd');
+    screen.write((5, 3), 'e');
+    screen.write((5, 4), 'f');
+
+    screen.write((1, 2), 'h');
+    screen.write((2, 2), 'h');
+    screen.write((3, 2), 'h');
+    screen.write((4, 2), 'h');
+
+    make_room();
+    dump_screen(screen).unwrap();
+    println!();
+}
+
+pub fn term_crossterm() -> crossterm::Result<()> {
+    make_room();
+    edit_loop()?;
+
+    Ok(())
+}
+
+fn make_room() {
+    ex!(Clear(ClearType::All), MoveTo(0, 0));
+}
 
 /**
  * What a fun lesson in how up/down just shift the buffer contents and
