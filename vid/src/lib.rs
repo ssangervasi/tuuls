@@ -81,7 +81,7 @@ pub fn handle_ictx(
                 for (i, point) in plane.iter().enumerate() {
                     let coord = (i as i32 % w as i32, i as i32 / w as i32);
                     let ch = point.data[0].to_char();
-                    screen.write(coord, ch);
+                    screen.write(&coord.into(), ch);
                 }
 
                 liib::dump_screen(screen).unwrap();
