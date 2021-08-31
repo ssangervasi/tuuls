@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 #![allow(unused_macros)]
 
-use liib;
+use liib::term::term_crossterm;
 
 fn main() {
-    liib::term_crossterm().unwrap()
+    term_crossterm().unwrap()
 }
