@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 #![allow(unused_macros)]
 
-use liib::term::term_crossterm;
+use liib::term::free_draw;
 
 fn main() {
-    term_crossterm().unwrap()
+    free_draw().unwrap()
 }

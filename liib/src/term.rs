@@ -56,7 +56,7 @@ macro_rules! rex {
 
 const BLANK: char = ' ';
 
-pub fn term_crossterm() -> crossterm::Result<()> {
+pub fn free_draw() -> crossterm::Result<()> {
     make_room();
     edit_loop()?;
 
@@ -67,40 +67,9 @@ fn make_room() {
     ex!(Clear(ClearType::All), MoveTo(0, 0));
 }
 
-/**
- * What a fun lesson in how up/down just shift the buffer contents and
- * dlete lines from the ends. Not nearly as useful.
- */
-pub fn scroll_test() -> crossterm::Result<()> {
-    let (_w, h) = get_size().unwrap_or((0, 0));
-
-    ex!(Print("\n--A--\n"));
-
-    ex!(MoveTo(0, 0));
-    for i in 0..(2 * h) {
-        ex!(Print(format!("{}\n", i)));
-        sleep(Duration::from_millis(50));
-    }
-
-    ex!(MoveTo(0, 1), Print("Scroll up"));
-    sleep(Duration::from_millis(2000));
-    ex!(ScrollUp(h / 2));
-    ex!(MoveTo(0, 2), Print("^^^^^"));
-    sleep(Duration::from_millis(2000));
-
-    ex!(MoveTo(0, 3), Print("Scroll down"));
-    sleep(Duration::from_millis(2000));
-    ex!(ScrollDown(h / 2));
-    ex!(MoveTo(0, 4), Print("VVVV"));
-    sleep(Duration::from_millis(2000));
-
-    ex!(Print("Done"));
-
-    Ok(())
-}
-
 fn edit_loop() -> crossterm::Result<()> {
     let mut screen = Screen::default();
+    let mut res: Res = Res::None;
 
     enable_raw_mode()?;
     loop {
@@ -111,11 +80,11 @@ fn edit_loop() -> crossterm::Result<()> {
             Clear(ClearType::CurrentLine),
             SetForegroundColor(Color::Red),
             Print(format!(
-                "Size: {} | Pos: {} | Cur: {} | Screen Mem: {}",
+                "Size: {} | Pos: {} | Cur: '{}' | Res: {:?}",
                 size,
                 cursor,
                 screen.read(&cursor),
-                screen.mem()
+                res
             ))
         );
 
@@ -130,12 +99,13 @@ fn edit_loop() -> crossterm::Result<()> {
             );
 
             let result: Res = process_event(&mut screen, event, size, cursor);
+            res = result;
+
             match result {
                 Res::Move(dp) => {
                     let np = screen.clip(&(cursor + dp));
                     ex!(MoveTo(np.0, np.1))
                 }
-
                 Res::Write(ch) => {
                     screen.write(&cursor, ch);
                     let np = screen.clip(&cursor);
@@ -151,6 +121,7 @@ fn edit_loop() -> crossterm::Result<()> {
     Ok(())
 }
 
+#[derive(Debug, Copy, Clone)]
 pub enum Res {
     Move(Position),
     Write(char),
@@ -190,34 +161,38 @@ pub fn process_event(
             modifiers: KeyModifiers::ALT,
         } => {
             let mut res = Res::Move((0, 0).into());
-            let match_blank = screen.read(&(c, r).into()) == BLANK;
+            let start_is_blank = screen.read(&(c, r).into()) == BLANK;
 
             match event.code {
                 KeyCode::Left => {
-                    for i in (0..=c).rev() {
-                        if (screen.read(&(i, r).into()) == BLANK) != match_blank {
-                            res = Res::Move((i - c, 0).into());
+                    for i in 0..=c {
+                        if (screen.read(&(c - i, r).into()) == BLANK) != start_is_blank {
+                            res = Res::Move((-i, 0).into());
+                            break;
                         }
                     }
                 }
                 KeyCode::Right => {
-                    for i in c..=w {
-                        if (screen.read(&(i, r).into()) == BLANK) != match_blank {
-                            res = Res::Move((i - c, 0).into());
+                    for i in 0..=(w - c) {
+                        if (screen.read(&(c + i, r).into()) == BLANK) != start_is_blank {
+                            res = Res::Move((i, 0).into());
+                            break;
                         }
                     }
                 }
                 KeyCode::Up => {
-                    for i in (0..=r).rev() {
-                        if (screen.read(&(c, i).into()) == BLANK) != match_blank {
-                            res = Res::Move((0, i - r).into());
+                    for i in 0..=r {
+                        if (screen.read(&(c, r - i).into()) == BLANK) != start_is_blank {
+                            res = Res::Move((0, -i).into());
+                            break;
                         }
                     }
                 }
                 KeyCode::Down => {
-                    for i in r..=h {
-                        if (screen.read(&(c, i).into()) == BLANK) != match_blank {
-                            res = Res::Move((0, i - r).into());
+                    for i in 0..=(h - r) {
+                        if (screen.read(&(c, r + i).into()) == BLANK) != start_is_blank {
+                            res = Res::Move((0, i).into());
+                            break;
                         }
                     }
                 }
@@ -301,4 +276,36 @@ fn test_dump() {
     make_room();
     dump_screen(screen).unwrap();
     println!();
+}
+
+/**
+ * What a fun lesson in how up/down just shift the buffer contents and
+ * dlete lines from the ends. Not nearly as useful.
+ */
+pub fn scroll_test() -> crossterm::Result<()> {
+    let (_w, h) = get_size().unwrap_or((0, 0));
+
+    ex!(Print("\n--A--\n"));
+
+    ex!(MoveTo(0, 0));
+    for i in 0..(2 * h) {
+        ex!(Print(format!("{}\n", i)));
+        sleep(Duration::from_millis(50));
+    }
+
+    ex!(MoveTo(0, 1), Print("Scroll up"));
+    sleep(Duration::from_millis(2000));
+    ex!(ScrollUp(h / 2));
+    ex!(MoveTo(0, 2), Print("^^^^^"));
+    sleep(Duration::from_millis(2000));
+
+    ex!(MoveTo(0, 3), Print("Scroll down"));
+    sleep(Duration::from_millis(2000));
+    ex!(ScrollDown(h / 2));
+    ex!(MoveTo(0, 4), Print("VVVV"));
+    sleep(Duration::from_millis(2000));
+
+    ex!(Print("Done"));
+
+    Ok(())
 }
