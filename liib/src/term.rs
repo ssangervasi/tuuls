@@ -75,6 +75,7 @@ fn edit_loop() -> crossterm::Result<()> {
     loop {
         let size: Position = get_size().unwrap_or((0, 0)).into();
         let cursor: Position = get_position().unwrap_or((0, 0)).into();
+        dump_screen(&mut screen)?;
         rex!(
             MoveTo(0, 0),
             Clear(ClearType::CurrentLine),
@@ -108,8 +109,6 @@ fn edit_loop() -> crossterm::Result<()> {
                 }
                 Res::Write(ch) => {
                     screen.write(&cursor, ch);
-                    let np = screen.clip(&cursor);
-                    ex!(Print(ch), MoveTo(np.0, np.1));
                 }
                 Res::Quit => break,
                 Res::None => {}
@@ -237,18 +236,24 @@ pub fn process_event(
     }
 }
 
-pub fn dump_screen(screen: Screen) -> crossterm::Result<()> {
-    enable_raw_mode()?;
+pub fn dump_screen(screen: &mut Screen) -> crossterm::Result<()> {
+    // enable_raw_mode()?;
     let mut stdout = stdout();
-    for r in 0..=(screen.rows) {
-        for c in 0..=(screen.cols) {
-            let p = Position::new(c, r);
-            let clipped = screen.clip(&p);
-            queue!(stdout, MoveTo(clipped.0, clipped.1), Print(screen.read(&p)))?;
-        }
+    queue!(stdout, SavePosition);
+    // for r in 0..=(screen.rows) {
+    //     for c in 0..=(screen.cols) {
+    //         let p = Position::new(c, r);
+    //         let clipped = screen.clip(&p);
+    //         queue!(stdout, MoveTo(clipped.0, clipped.1), Print(screen.read(&p)))?;
+    //     }
+    // }
+    for (postion, ch) in screen.flush() {
+        let clipped = screen.clip(&postion);
+        queue!(stdout, MoveTo(clipped.0, clipped.1), Print(ch))?;
     }
+    queue!(stdout, RestorePosition);
     stdout.flush()?;
-    disable_raw_mode()?;
+    // disable_raw_mode()?;
 
     Ok(())
 }
