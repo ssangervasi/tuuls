@@ -239,7 +239,7 @@ pub fn process_event(
 pub fn dump_screen(screen: &mut Screen) -> crossterm::Result<()> {
     // enable_raw_mode()?;
     let mut stdout = stdout();
-    queue!(stdout, SavePosition);
+    queue!(stdout, SavePosition)?;
     // for r in 0..=(screen.rows) {
     //     for c in 0..=(screen.cols) {
     //         let p = Position::new(c, r);
@@ -251,7 +251,7 @@ pub fn dump_screen(screen: &mut Screen) -> crossterm::Result<()> {
         let clipped = screen.clip(&postion);
         queue!(stdout, MoveTo(clipped.0, clipped.1), Print(ch))?;
     }
-    queue!(stdout, RestorePosition);
+    queue!(stdout, RestorePosition)?;
     stdout.flush()?;
     // disable_raw_mode()?;
 

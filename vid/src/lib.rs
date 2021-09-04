@@ -5,6 +5,9 @@ use ffmpeg_next::{
     util::frame::video::Video,
 };
 
+use liib::screen::Screen;
+use liib::term::dump_screen;
+
 pub fn term_screen(path: &str) -> Result<(), ffmpeg_next::Error> {
     ffmpeg_next::init().unwrap();
 
@@ -51,6 +54,7 @@ pub fn handle_ictx(
     );
 
     let mut frame_index = 0;
+    let mut screen = Screen::default();
 
     let mut receive_and_process_decoded_frames =
         |decoder: &mut ffmpeg_next::decoder::Video| -> Result<(), ffmpeg_next::Error> {
@@ -75,8 +79,6 @@ pub fn handle_ictx(
                 // let data = frame.plane::<(u8, u8, u8, u8)>(mid);
                 // println!("#{:?} {}x{} {}", frame_index, w, h, planes);
 
-                let mut screen = liib::Screen::default();
-
                 let plane = frame.plane::<image::Luma<u8>>(0);
                 for (i, point) in plane.iter().enumerate() {
                     let coord = (i as i32 % w as i32, i as i32 / w as i32);
@@ -84,7 +86,7 @@ pub fn handle_ictx(
                     screen.write(&coord.into(), ch);
                 }
 
-                liib::dump_screen(screen).unwrap();
+                dump_screen(&mut screen).unwrap();
             }
             Ok(())
         };
