@@ -5,12 +5,13 @@ use ffmpeg_next::{
     format::{input, Pixel},
     media::Type,
     software::scaling::{context::Context, flag::Flags},
+    util::frame::audio::Audio,
     util::frame::video::Video,
 };
 
 use liib::position::Position;
 use liib::screen::Screen;
-use liib::term::{dump_screen, get_size, make_room};
+use liib::term::{bells, dump_screen, get_size, make_room};
 
 pub fn term_screen(path: &str) -> Result<(), ffmpeg_next::Error> {
     ffmpeg_next::init().unwrap();
@@ -32,14 +33,11 @@ pub fn handle_ictx(
         .best(Type::Video)
         .ok_or(ffmpeg_next::Error::StreamNotFound)?;
     let video_stream_index = input.index();
-
     let mut decoder = input.codec().decoder().video()?;
-
     let target_fps = {
         let r = decoder.frame_rate().unwrap();
         (r.numerator() as f32) / (r.denominator() as f32)
     };
-
     let size = get_size();
     let mut scaler = Context::get(
         decoder.format(),
@@ -51,6 +49,14 @@ pub fn handle_ictx(
         // Flags::BILINEAR,
         Flags::GAUSS,
     )?;
+
+    let audio_input = ictx
+        .streams()
+        .best(Type::Audio)
+        .ok_or(ffmpeg_next::Error::StreamNotFound)?;
+    let audio_stream_index = audio_input.index();
+    let mut audio_decoder = audio_input.codec().decoder().audio()?;
+
     // println!(
     //     "{}x{} -> {}x{} ({}) {}",
     //     scaler.input().width,
@@ -60,7 +66,9 @@ pub fn handle_ictx(
     //     total_points,
     //     decoder.format(),
     // );
+    println!("Audio: {:?}", audio_decoder.format());
 
+    // panic!("nope");
     make_room();
 
     let mut frame_count: i32 = 0;
@@ -120,33 +128,54 @@ pub fn handle_ictx(
                     sleep(expected_elapsed - time_elapsed)
                 }
                 dump_screen(&mut screen).unwrap();
-
-                // if actual_fps >= target_fps {
-                //     sleep(Duration::from_millis(100))
-                // }
-                // let frame_time = Duration::from_millis(
-                //     // frame.timestamp().unwrap_or(time_elapsed.as_millis() as i64) as u64,
-                //     frame.timestamp().unwrap() as u64,
-                // );
-                // if time_elapsed < frame_time {
-                //     sleep(frame_time - time_elapsed);
-                // }
             }
             Ok(())
         };
 
     let mut packet_count = 0;
+    let mut audio_point_max = 0.0;
+    let mut audio_loud = false;
+    let audio_threshold = //
+        // 0.007
+        // 0.005
+        0.003
+        // 0.001
+        // 0.00049
+        // 0.00007892
+        // 0.00007
+        // 0.00007
+        // 0.00004
+    ;
     for (stream, packet) in ictx.packets() {
         if stream.index() == video_stream_index {
             packet_count += 1;
 
-            // Results in missing data errors, which makes sense.
-            // if packet_count % 20 == 0 {
-            //     continue;
-            // }
-
             decoder.send_packet(&packet).unwrap();
             receive_and_process_decoded_frames(&mut decoder)?;
+        } else if stream.index() == audio_stream_index {
+            audio_decoder.send_packet(&packet)?;
+            let mut audio_decoded = Audio::empty();
+            audio_decoder.receive_frame(&mut audio_decoded)?;
+            // let point = audio_decoded.plane::<f32>(0)[0];
+            // let point: f32 = audio_decoded
+            //     .plane::<f32>(0)
+            //     .iter()
+            //     .fold(0.0, |acc, &s| acc + s);
+            let point: f32 = audio_decoded.plane::<f32>(0).iter().sum::<f32>()
+                / audio_decoded.plane::<f32>(0).len() as f32;
+            if !audio_loud && audio_threshold < point {
+                audio_loud = true;
+                bells(1);
+                audio_point_max = point.max(audio_point_max);
+                // println!("{:?}", audio_point_max);
+                println!("up to {:?}", point);
+            } else if audio_loud && point < audio_threshold {
+                audio_loud = false;
+                bells(1);
+                println!("down from {:?}", point);
+            }
+
+            audio_decoder.flush();
         }
     }
     decoder.send_eof()?;

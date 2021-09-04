@@ -120,6 +120,9 @@ fn edit_loop() -> crossterm::Result<()> {
                 Res::Write(ch) => {
                     screen.write(&cursor, ch);
                 }
+                Res::Bell(count) => {
+                    bells(count);
+                }
                 Res::Quit => break,
                 Res::None => {}
             }
@@ -134,6 +137,7 @@ fn edit_loop() -> crossterm::Result<()> {
 pub enum Res {
     Move(Position),
     Write(char),
+    Bell(usize),
     Quit,
     None,
 }
@@ -235,6 +239,12 @@ pub fn process_event(
             modifiers: KeyModifiers::CONTROL,
         } => Res::Quit,
 
+        // Quit
+        KeyEvent {
+            code: KeyCode::Esc,
+            modifiers: _,
+        } => Res::Bell(c.max(r) as usize),
+
         // Write
         KeyEvent {
             code: KeyCode::Char(ch),
@@ -243,6 +253,13 @@ pub fn process_event(
 
         // Unhandled
         _ => Res::None,
+    }
+}
+
+pub fn bells(count: usize) {
+    for _ in 0..count {
+        ex!(Print(7 as char));
+        sleep(Duration::from_millis(100));
     }
 }
 
