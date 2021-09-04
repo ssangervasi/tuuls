@@ -5,8 +5,9 @@ use ffmpeg_next::{
     util::frame::video::Video,
 };
 
+use liib::position::Position;
 use liib::screen::Screen;
-use liib::term::dump_screen;
+use liib::term::{dump_screen, get_size, make_room};
 
 pub fn term_screen(path: &str) -> Result<(), ffmpeg_next::Error> {
     ffmpeg_next::init().unwrap();
@@ -33,28 +34,34 @@ pub fn handle_ictx(
 
     let dfmt = decoder.format();
     println!("dfmt {:?}", dfmt);
+
+    let size = get_size();
+    let total_points = size.col * size.row;
     let mut scaler = Context::get(
         decoder.format(),
         decoder.width(),
         decoder.height(),
-        // Pixel::YUV420P,
-        // Pixel::RGBA,
-        // Pixel::RGB24,
         Pixel::GRAY8,
-        decoder.width() / 6,
-        decoder.height() / 13,
-        Flags::BILINEAR,
+        size.col as u32,
+        size.row as u32,
+        // Flags::BILINEAR,
+        Flags::GAUSS,
     )?;
     println!(
-        "{}x{} -> {}x{}",
+        "{}x{} -> {}x{} ({})",
         scaler.input().width,
         scaler.input().height,
-        scaler.output().width,
-        scaler.output().height
+        size.col,
+        size.row,
+        total_points,
     );
 
+    // panic!("nah");
+    make_room();
+
     let mut frame_index = 0;
-    let mut screen = Screen::default();
+    let mut screen = Screen::with_size(size);
+    let mut last_size = 0;
 
     let mut receive_and_process_decoded_frames =
         |decoder: &mut ffmpeg_next::decoder::Video| -> Result<(), ffmpeg_next::Error> {
@@ -62,28 +69,59 @@ pub fn handle_ictx(
             while decoder.receive_frame(&mut decoded).is_ok() {
                 frame_index += 1;
 
-                // if frame_index < (10 * 60 * 4) {
-                //     println!("{}", frame_index);
-                //     continue;
-                // } else if frame_index > (30 * 60 * 1) {
-                //     break;
-                // }
-                // println!("yay");
-
                 let mut frame = Video::empty();
                 scaler.run(&decoded, &mut frame)?;
 
-                //
-                let w = frame.width();
-                let _h = frame.height();
-                // let data = frame.plane::<(u8, u8, u8, u8)>(mid);
-                // println!("#{:?} {}x{} {}", frame_index, w, h, planes);
-
                 let plane = frame.plane::<image::Luma<u8>>(0);
+
+                let points = plane.len();
+                let excess_points = points as i32 - total_points;
+                let real_cols = size.col + (excess_points / size.row);
+                let calc_pos = |index: i32| -> Position {
+                    let c = index % real_cols;
+                    let r = index / real_cols;
+                    (c, r).into()
+                };
+
+                let mut n = 0;
+                let mut weirdos: [Vec<u8>; 3] = [
+                    Vec::with_capacity(size.row as usize),
+                    Vec::with_capacity(size.row as usize),
+                    Vec::with_capacity(size.row as usize),
+                ];
                 for (i, point) in plane.iter().enumerate() {
-                    let coord = (i as i32 % w as i32, i as i32 / w as i32);
-                    let ch = point.data[0].to_char();
-                    screen.write(&coord.into(), ch);
+                    let pos = calc_pos(i as i32);
+                    let data = point.data[0];
+                    let ch = data.to_char();
+                    screen.write(&pos, ch);
+
+                    let j = i as i32;
+                    n = i;
+                    if j % size.col == 0 {
+                        weirdos[0].push(data);
+                    }
+                    if j % (size.col + 1) == 0 {
+                        weirdos[1].push(data);
+                    }
+                    if (j + 1) % (size.col) == 0 {
+                        weirdos[2].push(data);
+                    }
+                }
+
+                if last_size != n {
+                    last_size = n;
+                    println!("Points: {}", n);
+                    println!("Cols:   {}", size.col);
+                    println!("Rows:   {}", size.row);
+                    println!("Points/Cols: {}", (n as f32) / (size.col as f32));
+                    println!("Points/Rows: {}", (n as f32) / (size.row as f32));
+                    println!("Exesss:      {}", (n as i32) - (size.col * size.row));
+                    println!("Planes:      {}", frame.planes());
+                    println!("Plane W:     {}", frame.plane_width(0));
+                    println!("Plane H:     {}", frame.plane_height(0));
+                    println!("% col:    {:?} ({})", weirdos[0], weirdos[0].len());
+                    println!("% col+1:  {:?} ({})", weirdos[1], weirdos[1].len());
+                    println!("+1 % col: {:?} ({})", weirdos[2], weirdos[2].len());
                 }
 
                 dump_screen(&mut screen).unwrap();

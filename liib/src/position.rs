@@ -16,8 +16,6 @@ impl Position {
     pub fn new(col: i32, row: i32) -> Self {
         Self { col, row }
     }
-
-    pub fn a() {}
 }
 
 impl fmt::Display for Position {

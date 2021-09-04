@@ -68,7 +68,11 @@ impl Screen {
     // }
 
     pub fn clip(&self, position: &Position) -> Visible {
-        (*position).into()
+        let clipped = Position {
+            col: position.col.clamp(0, self.cols - 1),
+            row: position.row.clamp(0, self.rows - 1),
+        };
+        clipped.into()
     }
 }
 

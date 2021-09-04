@@ -4,14 +4,16 @@
 
 use core::time::Duration;
 use crossterm::{
-    cursor::{position as get_position, MoveTo, MoveToNextLine, RestorePosition, SavePosition},
+    cursor::{
+        position as crossterm_position, MoveTo, MoveToNextLine, RestorePosition, SavePosition,
+    },
     event::{poll, read, Event, KeyCode, KeyEvent, KeyModifiers},
     execute, queue,
     style::{Color, Print, SetForegroundColor},
     terminal::{
         disable_raw_mode,
         enable_raw_mode,
-        size as get_size,
+        size as crossterm_size,
         //
         Clear,
         ClearType,
@@ -63,19 +65,27 @@ pub fn free_draw() -> crossterm::Result<()> {
     Ok(())
 }
 
-fn make_room() {
+pub fn make_room() {
     ex!(Clear(ClearType::All), MoveTo(0, 0));
 }
 
+pub fn get_size() -> Position {
+    crossterm_size().unwrap_or((0, 0)).into()
+}
+
+pub fn get_position() -> Position {
+    crossterm_position().unwrap_or((0, 0)).into()
+}
+
 fn edit_loop() -> crossterm::Result<()> {
-    let mut screen = Screen::default();
+    let mut screen = Screen::with_size(get_size());
     let mut res: Res = Res::None;
 
     enable_raw_mode()?;
     loop {
-        let size: Position = get_size().unwrap_or((0, 0)).into();
-        let cursor: Position = get_position().unwrap_or((0, 0)).into();
-        dump_screen(&mut screen)?;
+        let size = get_size();
+        let cursor = get_position();
+        just_dump_screen(&mut screen)?;
         rex!(
             MoveTo(0, 0),
             Clear(ClearType::CurrentLine),
@@ -237,23 +247,22 @@ pub fn process_event(
 }
 
 pub fn dump_screen(screen: &mut Screen) -> crossterm::Result<()> {
-    // enable_raw_mode()?;
+    enable_raw_mode()?;
+    just_dump_screen(screen)?;
+    disable_raw_mode()?;
+
+    Ok(())
+}
+
+pub fn just_dump_screen(screen: &mut Screen) -> crossterm::Result<()> {
     let mut stdout = stdout();
     queue!(stdout, SavePosition)?;
-    // for r in 0..=(screen.rows) {
-    //     for c in 0..=(screen.cols) {
-    //         let p = Position::new(c, r);
-    //         let clipped = screen.clip(&p);
-    //         queue!(stdout, MoveTo(clipped.0, clipped.1), Print(screen.read(&p)))?;
-    //     }
-    // }
     for (postion, ch) in screen.flush() {
         let clipped = screen.clip(&postion);
         queue!(stdout, MoveTo(clipped.0, clipped.1), Print(ch))?;
     }
     queue!(stdout, RestorePosition)?;
     stdout.flush()?;
-    // disable_raw_mode()?;
 
     Ok(())
 }
@@ -279,8 +288,25 @@ fn test_dump() {
     screen.write(&(4, 2).into(), 'h');
 
     make_room();
-    dump_screen(screen).unwrap();
+    dump_screen(&mut screen).unwrap();
     println!();
+}
+
+pub fn e() {
+    enable_raw_mode().unwrap();
+}
+pub fn d() {
+    disable_raw_mode().unwrap();
+}
+
+#[macro_export]
+macro_rules! rawful {
+    ($t:expr) => {
+        liib::term::e();
+        let v = $t;
+        liib::term::d();
+        v
+    };
 }
 
 /**
@@ -288,7 +314,7 @@ fn test_dump() {
  * dlete lines from the ends. Not nearly as useful.
  */
 pub fn scroll_test() -> crossterm::Result<()> {
-    let (_w, h) = get_size().unwrap_or((0, 0));
+    let (_w, h): Visible = get_size().into();
 
     ex!(Print("\n--A--\n"));
 
