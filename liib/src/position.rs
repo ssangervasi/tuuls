@@ -16,6 +16,13 @@ impl Position {
     pub fn new(col: i32, row: i32) -> Self {
         Self { col, row }
     }
+
+    pub fn clamp(&self, min: Position, max: Position) -> Self {
+        Self {
+            col: self.col.clamp(min.col, max.col),
+            row: self.row.clamp(min.row, max.row),
+        }
+    }
 }
 
 impl fmt::Display for Position {

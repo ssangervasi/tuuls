@@ -1,3 +1,6 @@
+use std::thread::sleep;
+use std::time::{Duration, Instant};
+
 use ffmpeg_next::{
     format::{input, Pixel},
     media::Type,
@@ -32,11 +35,12 @@ pub fn handle_ictx(
 
     let mut decoder = input.codec().decoder().video()?;
 
-    let dfmt = decoder.format();
-    println!("dfmt {:?}", dfmt);
+    let target_fps = {
+        let r = decoder.frame_rate().unwrap();
+        (r.numerator() as f32) / (r.denominator() as f32)
+    };
 
     let size = get_size();
-    let total_points = size.col * size.row;
     let mut scaler = Context::get(
         decoder.format(),
         decoder.width(),
@@ -47,32 +51,51 @@ pub fn handle_ictx(
         // Flags::BILINEAR,
         Flags::GAUSS,
     )?;
-    println!(
-        "{}x{} -> {}x{} ({})",
-        scaler.input().width,
-        scaler.input().height,
-        size.col,
-        size.row,
-        total_points,
-    );
+    // println!(
+    //     "{}x{} -> {}x{} ({}) {}",
+    //     scaler.input().width,
+    //     scaler.input().height,
+    //     size.col,
+    //     size.row,
+    //     total_points,
+    //     decoder.format(),
+    // );
 
-    // panic!("nah");
     make_room();
 
-    let mut frame_index = 0;
+    let mut frame_count: i32 = 0;
     let mut screen = Screen::with_size(size);
-    let mut last_size = 0;
+    let total_points = size.col * size.row;
+
+    let time_start = Instant::now();
 
     let mut receive_and_process_decoded_frames =
         |decoder: &mut ffmpeg_next::decoder::Video| -> Result<(), ffmpeg_next::Error> {
             let mut decoded = Video::empty();
             while decoder.receive_frame(&mut decoded).is_ok() {
-                frame_index += 1;
+                frame_count += 1;
 
                 let mut frame = Video::empty();
                 scaler.run(&decoded, &mut frame)?;
 
                 let plane = frame.plane::<image::Luma<u8>>(0);
+
+                /*
+                Apparently the plane contains spacer data points, like this:
+                    00 01 02 03 04 05 __
+                    07 08 09 10 11 12 __
+                    14 15 16 17 18 19 __
+                    21 22 23 34 25 26
+                If we modulo by the desired column width, lines are skewed:
+                    00 01 02 03 04 05
+                    __ 07 08 09 10 11
+                    12 __ 14 15 16 17
+                    18 19 __ 21 22 23
+                    34 25 26
+                So the actual number of columns is found by dividing the excess
+                accross each row. The screen will disregard the columns that are
+                out of bounds.
+                */
 
                 let points = plane.len();
                 let excess_points = points as i32 - total_points;
@@ -83,61 +106,53 @@ pub fn handle_ictx(
                     (c, r).into()
                 };
 
-                let mut n = 0;
-                let mut weirdos: [Vec<u8>; 3] = [
-                    Vec::with_capacity(size.row as usize),
-                    Vec::with_capacity(size.row as usize),
-                    Vec::with_capacity(size.row as usize),
-                ];
                 for (i, point) in plane.iter().enumerate() {
                     let pos = calc_pos(i as i32);
                     let data = point.data[0];
                     let ch = data.to_char();
                     screen.write(&pos, ch);
-
-                    let j = i as i32;
-                    n = i;
-                    if j % size.col == 0 {
-                        weirdos[0].push(data);
-                    }
-                    if j % (size.col + 1) == 0 {
-                        weirdos[1].push(data);
-                    }
-                    if (j + 1) % (size.col) == 0 {
-                        weirdos[2].push(data);
-                    }
                 }
 
-                if last_size != n {
-                    last_size = n;
-                    println!("Points: {}", n);
-                    println!("Cols:   {}", size.col);
-                    println!("Rows:   {}", size.row);
-                    println!("Points/Cols: {}", (n as f32) / (size.col as f32));
-                    println!("Points/Rows: {}", (n as f32) / (size.row as f32));
-                    println!("Exesss:      {}", (n as i32) - (size.col * size.row));
-                    println!("Planes:      {}", frame.planes());
-                    println!("Plane W:     {}", frame.plane_width(0));
-                    println!("Plane H:     {}", frame.plane_height(0));
-                    println!("% col:    {:?} ({})", weirdos[0], weirdos[0].len());
-                    println!("% col+1:  {:?} ({})", weirdos[1], weirdos[1].len());
-                    println!("+1 % col: {:?} ({})", weirdos[2], weirdos[2].len());
+                let time_now = Instant::now();
+                let time_elapsed = time_now - time_start;
+                let expected_elapsed = Duration::from_secs_f32(frame_count as f32 / target_fps);
+                if time_elapsed < expected_elapsed {
+                    sleep(expected_elapsed - time_elapsed)
                 }
-
                 dump_screen(&mut screen).unwrap();
+
+                // if actual_fps >= target_fps {
+                //     sleep(Duration::from_millis(100))
+                // }
+                // let frame_time = Duration::from_millis(
+                //     // frame.timestamp().unwrap_or(time_elapsed.as_millis() as i64) as u64,
+                //     frame.timestamp().unwrap() as u64,
+                // );
+                // if time_elapsed < frame_time {
+                //     sleep(frame_time - time_elapsed);
+                // }
             }
             Ok(())
         };
 
+    let mut packet_count = 0;
     for (stream, packet) in ictx.packets() {
         if stream.index() == video_stream_index {
-            decoder.send_packet(&packet)?;
+            packet_count += 1;
+
+            // Results in missing data errors, which makes sense.
+            // if packet_count % 20 == 0 {
+            //     continue;
+            // }
+
+            decoder.send_packet(&packet).unwrap();
             receive_and_process_decoded_frames(&mut decoder)?;
         }
     }
     decoder.send_eof()?;
     receive_and_process_decoded_frames(&mut decoder)?;
 
+    println!("Packets: {} | Frames: {}", packet_count, frame_count);
     Ok(())
 }
 

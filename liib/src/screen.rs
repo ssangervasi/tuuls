@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::position::{Position, Visible};
+use crate::position::Position;
 
 pub const BLANK: char = ' ';
 
@@ -55,6 +55,11 @@ impl Screen {
     pub fn flush(&mut self) -> Vec<(Position, char)> {
         let mut updates: Vec<(Position, char)> = Vec::with_capacity(self.buffer.capacity());
         for (&position, &ch) in self.buffer.iter() {
+            if self.clamp(&position) != position {
+                // Out-of-bounds positions can be buffered, but the are ignored at flush.
+                continue;
+            }
+
             let original = self.written.insert(position, ch);
             if original == None || original != Some(ch) {
                 updates.push((position, ch));
@@ -67,12 +72,8 @@ impl Screen {
     //     (std::mem::size_of::<Position>() + std::mem::size_of::<char>()) * self.written.len()
     // }
 
-    pub fn clip(&self, position: &Position) -> Visible {
-        let clipped = Position {
-            col: position.col.clamp(0, self.cols - 1),
-            row: position.row.clamp(0, self.rows - 1),
-        };
-        clipped.into()
+    pub fn clamp(&self, position: &Position) -> Position {
+        position.clamp(Position::new(0, 0), Position::new(self.cols, self.rows))
     }
 }
 

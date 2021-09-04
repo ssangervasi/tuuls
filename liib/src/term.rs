@@ -114,7 +114,7 @@ fn edit_loop() -> crossterm::Result<()> {
 
             match result {
                 Res::Move(dp) => {
-                    let np = screen.clip(&(cursor + dp));
+                    let np: Visible = (cursor + dp).into();
                     ex!(MoveTo(np.0, np.1))
                 }
                 Res::Write(ch) => {
@@ -258,7 +258,7 @@ pub fn just_dump_screen(screen: &mut Screen) -> crossterm::Result<()> {
     let mut stdout = stdout();
     queue!(stdout, SavePosition)?;
     for (postion, ch) in screen.flush() {
-        let clipped = screen.clip(&postion);
+        let clipped: Visible = screen.clamp(&postion).into();
         queue!(stdout, MoveTo(clipped.0, clipped.1), Print(ch))?;
     }
     queue!(stdout, RestorePosition)?;
