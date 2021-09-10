@@ -37,6 +37,12 @@ impl Screen {
         self.buffer.insert(*position, ch).unwrap_or(BLANK)
     }
 
+    pub fn clear(&mut self) {
+        for &pos in self.written.keys() {
+            self.buffer.insert(pos, BLANK);
+        }
+    }
+
     /**
      * Returns the character that has been written and flushed at the designated position.
      * If the position has not been touched, [BLANK] is returned.

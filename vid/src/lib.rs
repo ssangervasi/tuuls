@@ -10,8 +10,10 @@ use ffmpeg_next::{
 };
 
 use liib::position::Position;
+use liib::ringer::Ringer;
 use liib::screen::Screen;
-use liib::term::{bells, dump_screen, get_size, make_room};
+use liib::scrite;
+use liib::term::{dump_ringer, dump_screen, get_size, make_room};
 
 pub fn term_screen(path: &str) -> Result<(), ffmpeg_next::Error> {
     ffmpeg_next::init().unwrap();
@@ -77,7 +79,7 @@ pub fn handle_ictx(
 
     let time_start = Instant::now();
 
-    let mut receive_and_process_decoded_frames =
+    let mut process_video =
         |decoder: &mut ffmpeg_next::decoder::Video| -> Result<(), ffmpeg_next::Error> {
             let mut decoded = Video::empty();
             while decoder.receive_frame(&mut decoded).is_ok() {
@@ -111,7 +113,7 @@ pub fn handle_ictx(
                 let calc_pos = |index: i32| -> Position {
                     let c = index % real_cols;
                     let r = index / real_cols;
-                    (c, r).into()
+                    (c + 5, r).into()
                 };
 
                 for (i, point) in plane.iter().enumerate() {
@@ -132,54 +134,66 @@ pub fn handle_ictx(
             Ok(())
         };
 
-    let mut packet_count = 0;
-    let mut audio_point_max = 0.0;
-    let mut audio_loud = false;
+    let mut ringer = Ringer::new();
+    let mut wave_screen = Screen::with_size(size);
+    let mut audio_frame_count: i32 = 0;
+    let audio_range = (0.00001, 0.01);
     let audio_threshold = //
-        // 0.007
-        // 0.005
-        0.003
-        // 0.001
-        // 0.00049
-        // 0.00007892
-        // 0.00007
-        // 0.00007
-        // 0.00004
+        // --
+        0.0018
     ;
+    let mut process_audio =
+        |decoder: &mut ffmpeg_next::decoder::Audio| -> Result<(), ffmpeg_next::Error> {
+            let mut decoded = Audio::empty();
+            while decoder.receive_frame(&mut decoded).is_ok() {
+                audio_frame_count += 1;
+
+                let point: f32 = decoded.plane::<f32>(0).iter().sum::<f32>()
+                    / decoded.plane::<f32>(0).len() as f32;
+                if audio_threshold < point {
+                    ringer.ring();
+                }
+
+                dump_ringer(&mut ringer).unwrap();
+
+                let level: i32 = (((point - audio_range.0) / (audio_range.1 - audio_range.0))
+                    * (wave_screen.rows as f32)) as i32;
+
+                if audio_frame_count % 5 == 0 {
+                    wave_screen.clear();
+                }
+
+                wave_screen.write(&(audio_frame_count % 5, level).into(), 'O');
+                // scrite!(
+                //     &mut wave_screen,
+                //     (0, level, 'O'),
+                //     (1, level, 'O'),
+                //     (2, level, 'O'),
+                //     (3, level, 'O'),
+                //     (4, level, 'O'),
+                //     (5, level, 'O')
+                // );
+
+                decoder.flush();
+                dump_screen(&mut wave_screen).unwrap();
+            }
+            Ok(())
+        };
+
+    let mut packet_count = 0;
     for (stream, packet) in ictx.packets() {
         if stream.index() == video_stream_index {
             packet_count += 1;
 
             decoder.send_packet(&packet).unwrap();
-            receive_and_process_decoded_frames(&mut decoder)?;
+            process_video(&mut decoder)?;
         } else if stream.index() == audio_stream_index {
-            audio_decoder.send_packet(&packet)?;
-            let mut audio_decoded = Audio::empty();
-            audio_decoder.receive_frame(&mut audio_decoded)?;
-            // let point = audio_decoded.plane::<f32>(0)[0];
-            // let point: f32 = audio_decoded
-            //     .plane::<f32>(0)
-            //     .iter()
-            //     .fold(0.0, |acc, &s| acc + s);
-            let point: f32 = audio_decoded.plane::<f32>(0).iter().sum::<f32>()
-                / audio_decoded.plane::<f32>(0).len() as f32;
-            if !audio_loud && audio_threshold < point {
-                audio_loud = true;
-                bells(1);
-                audio_point_max = point.max(audio_point_max);
-                // println!("{:?}", audio_point_max);
-                println!("up to {:?}", point);
-            } else if audio_loud && point < audio_threshold {
-                audio_loud = false;
-                bells(1);
-                println!("down from {:?}", point);
-            }
-
-            audio_decoder.flush();
+            audio_decoder.send_packet(&packet).unwrap();
+            process_audio(&mut audio_decoder)?;
         }
     }
     decoder.send_eof()?;
-    receive_and_process_decoded_frames(&mut decoder)?;
+    process_video(&mut decoder)?;
 
     println!("Packets: {} | Frames: {}", packet_count, frame_count);
     Ok(())

@@ -28,6 +28,7 @@ use std::io::*;
 use std::thread::sleep;
 
 use crate::position::{Position, Visible};
+use crate::ringer::Ringer;
 use crate::screen::Screen;
 
 macro_rules! ex {
@@ -266,6 +267,16 @@ pub fn bells(count: usize) {
 pub fn dump_screen(screen: &mut Screen) -> crossterm::Result<()> {
     enable_raw_mode()?;
     just_dump_screen(screen)?;
+    disable_raw_mode()?;
+
+    Ok(())
+}
+
+pub fn dump_ringer(ringer: &mut Ringer) -> crossterm::Result<()> {
+    enable_raw_mode()?;
+    if ringer.flush() {
+        ex!(Print(7 as char));
+    }
     disable_raw_mode()?;
 
     Ok(())
