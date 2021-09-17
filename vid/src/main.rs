@@ -1,6 +1,7 @@
 use clap::{App, Arg};
 
 use vid::term_screen;
+use vid::Options;
 
 fn main() {
     app()
@@ -12,10 +13,31 @@ fn app() {
             Arg::with_name("path")
                 .takes_value(true)
                 .required(true)
+                .index(1)
                 .help("Path to video to play"),
         )
+        .arg(
+            Arg::with_name("sound")
+                .short("s")
+                .help("Play sounds using the terminal bell"),
+        )
+        .arg(
+            Arg::with_name("waveform")
+                .short("w")
+                .help("Play sounds using the terminal bell"),
+        )
         .get_matches();
+
     let path = matches.value_of("path").unwrap_or("");
     println!("P: {}", path);
-    term_screen(path).unwrap();
+
+    let sound = matches.occurrences_of("sound") >= 1;
+    let waveform = matches.occurrences_of("waveform") >= 1;
+
+    let options = Options {
+        path: path.to_string(),
+        sound,
+        waveform,
+    };
+    term_screen(&options).unwrap();
 }

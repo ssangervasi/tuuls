@@ -12,16 +12,26 @@ use ffmpeg_next::{
 use liib::position::Position;
 use liib::ringer::Ringer;
 use liib::screen::Screen;
-use liib::scrite;
+
 use liib::term::{dump_ringer, dump_screen, get_size, make_room};
 
-pub fn term_screen(path: &str) -> Result<(), ffmpeg_next::Error> {
+pub struct Options {
+    pub path: String,
+    pub sound: bool,
+    pub waveform: bool,
+}
+
+// pub fn term_screen(path: &str) -> Result<(), ffmpeg_next::Error> {
+pub fn term_screen(options: &Options) -> Result<(), ffmpeg_next::Error> {
     ffmpeg_next::init().unwrap();
 
-    match input(&path) {
-        Ok(mut ictx) => handle_ictx(&mut ictx),
+    match input(&options.path) {
+        Ok(mut ictx) => handle_ictx(&mut ictx, options),
         Err(e) => {
-            println!("Path '{}' could not be opened as a video. {}", path, e);
+            println!(
+                "Path '{}' could not be opened as a video. {}",
+                options.path, e
+            );
             Err(e)
         }
     }
@@ -29,6 +39,7 @@ pub fn term_screen(path: &str) -> Result<(), ffmpeg_next::Error> {
 
 pub fn handle_ictx(
     ictx: &mut ffmpeg_next::format::context::input::Input,
+    options: &Options,
 ) -> Result<(), ffmpeg_next::Error> {
     let input = ictx
         .streams()
@@ -113,7 +124,11 @@ pub fn handle_ictx(
                 let calc_pos = |index: i32| -> Position {
                     let c = index % real_cols;
                     let r = index / real_cols;
-                    (c + 5, r).into()
+                    if options.waveform {
+                        (c + 5, r).into()
+                    } else {
+                        (c, r).into()
+                    }
                 };
 
                 for (i, point) in plane.iter().enumerate() {
@@ -135,7 +150,7 @@ pub fn handle_ictx(
         };
 
     let mut ringer = Ringer::new();
-    let mut wave_screen = Screen::with_size(size);
+    let mut wave_screen = Screen::with_size((5, size.row).into());
     let mut audio_frame_count: i32 = 0;
     let audio_range = (0.00001, 0.01);
     let audio_threshold = //
@@ -154,7 +169,9 @@ pub fn handle_ictx(
                     ringer.ring();
                 }
 
-                dump_ringer(&mut ringer).unwrap();
+                if options.sound {
+                    dump_ringer(&mut ringer).unwrap();
+                }
 
                 let level: i32 = (((point - audio_range.0) / (audio_range.1 - audio_range.0))
                     * (wave_screen.rows as f32)) as i32;
@@ -163,19 +180,12 @@ pub fn handle_ictx(
                     wave_screen.clear();
                 }
 
-                wave_screen.write(&(audio_frame_count % 5, level).into(), 'O');
-                // scrite!(
-                //     &mut wave_screen,
-                //     (0, level, 'O'),
-                //     (1, level, 'O'),
-                //     (2, level, 'O'),
-                //     (3, level, 'O'),
-                //     (4, level, 'O'),
-                //     (5, level, 'O')
-                // );
+                wave_screen.write(&(audio_frame_count % wave_screen.cols, level).into(), 'O');
+                if options.waveform {
+                    dump_screen(&mut wave_screen).unwrap();
+                }
 
                 decoder.flush();
-                dump_screen(&mut wave_screen).unwrap();
             }
             Ok(())
         };
