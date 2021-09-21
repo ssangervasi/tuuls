@@ -24,7 +24,7 @@ fn app() {
         .arg(
             Arg::with_name("waveform")
                 .short("w")
-                .help("Play sounds using the terminal bell"),
+                .help("Display a crude audio waveform next to the video"),
         )
         .get_matches();
 
