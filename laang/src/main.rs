@@ -18,8 +18,6 @@ fn app() {
         .get_matches();
 
     let path = matches.value_of("path").unwrap_or("");
-    println!("P: {}", path);
-
     let cli_opts = CliOptions {
         path: path.to_string(),
     };

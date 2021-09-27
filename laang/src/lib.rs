@@ -14,40 +14,55 @@ pub struct CliOptions {
 
 pub fn eval(opts: &CliOptions) {
     let fpath = Path::new(&opts.path);
+    println!("Path: {:?}", fpath);
+
     let f = fs::File::open(fpath).unwrap();
     let reader = io::BufReader::new(f);
     let mut tokenizer = Tokenizer::new();
+
+    println!("---------");
+    println!("Contents:");
+
     for (i, line_r) in reader.lines().enumerate() {
         if let Ok(line) = line_r {
             println!("{}:\t{}", i, line);
             tokenizer.take_line(&line);
         }
     }
-    println!("{:?}", tokenizer)
+    println!("---------");
+    println!("Tokens:");
+    println!("{:?}", tokenizer);
+
+    println!("---------");
+    println!("Result:");
+
+    Evaluator::new(tokenizer).eval();
 }
 
 lazy_static! {
     static ref BRACKET: Regex = Regex::new(r"[\[\]]").unwrap();
-    static ref SPACE: Regex = Regex::new(r"\s+").unwrap();
+    static ref SPACE: Regex = Regex::new(r"[\t ]+").unwrap();
+    static ref BREAK: Regex = Regex::new(r"[\n\r]+").unwrap();
 }
 
 #[derive(Debug, Copy, Clone)]
 enum TokenType {
     Bracket,
     Space,
-    Any,
+    Break,
+    Text,
 }
 
 #[derive(Debug, Clone)]
-enum Context {
+enum Token {
     Single(TokenType, String),
     Multi(TokenType, String),
     Empty,
 }
 
-impl Context {
+impl Token {
     fn combine(&self, other: &Self) -> (Self, Self) {
-        use Context::*;
+        use Token::*;
         match (self, other) {
             (Multi(s_t, s_s), Multi(o_t, o_s)) => {
                 if discriminant(s_t) == discriminant(o_t) {
@@ -62,11 +77,29 @@ impl Context {
             _ => (self.clone(), other.clone()),
         }
     }
+
+    fn t(&self) -> TokenType {
+        use Token::*;
+        match self {
+            Multi(t, _) => *t,
+            Single(t, _) => *t,
+            Empty => TokenType::Space,
+        }
+    }
+
+    fn content(&self) -> &str {
+        use Token::*;
+        match self {
+            Multi(_, s) => s,
+            Single(_, s) => s,
+            Empty => "",
+        }
+    }
 }
 
 #[derive(Debug)]
 struct Tokenizer {
-    tokens: Vec<String>,
+    tokens: Vec<Token>,
 }
 
 impl Tokenizer {
@@ -78,32 +111,73 @@ impl Tokenizer {
 
     fn take_line(&mut self, line: &str) {
         let gs = UnicodeSegmentation::graphemes(line, true).collect::<Vec<&str>>();
-        let mut context = Context::Empty;
+        let mut context = Token::Empty;
         for g in gs {
             let current = if BRACKET.is_match(g) {
-                Context::Single(TokenType::Bracket, g.to_string())
+                Token::Single(TokenType::Bracket, g.to_string())
             } else if SPACE.is_match(g) {
-                Context::Multi(TokenType::Space, g.to_string())
+                Token::Multi(TokenType::Space, g.to_string())
+            } else if BREAK.is_match(g) {
+                Token::Multi(TokenType::Break, g.to_string())
             } else {
-                Context::Multi(TokenType::Any, g.to_string())
+                Token::Multi(TokenType::Text, g.to_string())
             };
 
             let (complete, incomplete) = context.combine(&current);
-            self.push(&complete);
+            self.push(complete);
             context = incomplete;
+        }
+        self.push(context);
+        self.push(Token::Multi(TokenType::Break, "\n".to_string()));
+    }
+
+    fn push(&mut self, token: Token) {
+        use Token::*;
+        match token {
+            Empty => {}
+            _ => {
+                self.tokens.push(token);
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+struct Evaluator {
+    tokens: Vec<Token>,
+}
+
+impl Evaluator {
+    fn new(tokenizer: Tokenizer) -> Self {
+        Self {
+            tokens: tokenizer.tokens,
         }
     }
 
-    fn push(&mut self, context: &Context) {
-        use Context::*;
-        match context {
-            Single(_, s) => {
-                self.tokens.push(s.to_string());
+    fn eval(self) {
+        let mut in_str = false;
+        let mut cur_str = String::new();
+        let mut op = &self.tokens[0..0];
+        for (i, token) in self.tokens.iter().enumerate() {
+            println!("{:?} {:?} {:?} {:?} ", in_str, token.content(), op, cur_str);
+
+            if in_str {
+                if token.content() == "]" {
+                    in_str = false;
+                } else {
+                    cur_str.push_str(token.content());
+                }
+            } else if token.content() == "[" {
+                in_str = true;
+            } else if discriminant(&token.t()) == discriminant(&TokenType::Break) {
+                println!("---------------break");
+                if op.len() == 1 && op[0].content() == "print" {
+                    println!("{}", cur_str);
+                    op = &self.tokens[0..0];
+                }
+            } else if discriminant(&token.t()) == discriminant(&TokenType::Text) {
+                op = &self.tokens[i..=i];
             }
-            Multi(_, s) => {
-                self.tokens.push(s.to_string());
-            }
-            Empty => {}
         }
     }
 }
