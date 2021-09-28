@@ -79,6 +79,10 @@ impl Token {
 		}
 	}
 
+	fn is(&self, t: TokenType) -> bool {
+		discriminant(&self.t()) == discriminant(&t)
+	}
+
 	fn t(&self) -> TokenType {
 		use Token::*;
 		match self {
@@ -143,48 +147,79 @@ impl Tokenizer {
 	}
 }
 
+#[derive(Debug, Clone)]
+enum Statement {
+	Assign(Token),
+	Call(Token),
+	Empty,
+}
+
+#[derive(Debug, Clone)]
+enum Expression {
+	Collection(Vec<Token>),
+	Empty,
+}
+
 #[derive(Debug)]
 struct Evaluator {
 	defs: HashMap<String, String>,
-	in_str: bool,
+	exprs: Vec<Expression>,
+	expr: Expression,
 	strs: Vec<String>,
-	op: Option<Token>,
+	statement: Statement,
 }
 
 impl Evaluator {
 	fn new() -> Self {
 		Self {
 			defs: HashMap::with_capacity(10),
-			in_str: false,
+			expr: Expression::Empty,
+			exprs: Vec::new(),
 			strs: Vec::new(),
-			op: None,
+			statement: Statement::Empty,
 		}
 	}
 
 	fn eval(&mut self, tokens: Vec<Token>) {
-		for (i, token) in tokens.iter().enumerate() {
+		for token in tokens.iter() {
 			// println!("{:?} {:?} {:?} {:?} ", in_str, token.content(), op, cur_str);
 
-			if self.in_str {
+			if let Expression::Collection(v) = &mut self.expr {
 				if token.content() == "]" {
-					self.in_str = false
+					self.exprs.push(Expression::Collection(v.clone()));
+					self.expr = Expression::Empty;
 				} else {
-					self.strs.last_mut().unwrap().push_str(token.content());
+					// self.expr.0.push(token);
+					v.push(token.clone());
 				}
 			} else if token.content() == "[" {
-				self.in_str = true;
-				self.strs.push(String::new());
-			} else if discriminant(&token.t()) == discriminant(&TokenType::Break) {
-				if let Some(t) = &self.op {
+				self.expr = Expression::Collection(Vec::new());
+			} else if token.is(TokenType::Break) {
+				if let Statement::Call(t) = &self.statement {
 					if t.content() == "print" {
-						println!("{}", self.strs[0]);
-						self.op = None;
-						self.strs.clear();
+						println!("{}", join(&self.exprs));
+						self.statement = Statement::Empty;
+						self.exprs.clear();
 					}
 				}
-			} else if discriminant(&token.t()) == discriminant(&TokenType::Text) {
-				self.op = Some(tokens[i].clone());
+			} else if token.is(TokenType::Text) {
+				self.statement = Statement::Call(token.clone());
 			}
 		}
 	}
+}
+
+fn join(exprs: &[Expression]) -> String {
+	exprs
+		.iter()
+		.map(|expr| match expr {
+			Expression::Collection(tokens) => tokens
+				.iter()
+				.map(|token| token.content())
+				.collect::<Vec<&str>>()
+				.join(""),
+			Expression::Empty => "".to_string(),
+		})
+		.collect::<Vec<String>>()
+		.join("")
 }
