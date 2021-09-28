@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+
+cargo run \
+	examples/vars.laang
+	# examples/hello_world.laang
