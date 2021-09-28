@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs;
 use std::io;
 use std::io::BufRead;
@@ -36,7 +37,7 @@ pub fn eval(opts: &CliOptions) {
     println!("---------");
     println!("Result:");
 
-    Evaluator::new(tokenizer).eval();
+    Evaluator::new().eval(tokenizer.tokens);
 }
 
 lazy_static! {
@@ -144,39 +145,45 @@ impl Tokenizer {
 
 #[derive(Debug)]
 struct Evaluator {
-    tokens: Vec<Token>,
+    defs: HashMap<String, String>,
+    in_str: bool,
+    strs: Vec<String>,
+    op: Option<Token>,
 }
 
 impl Evaluator {
-    fn new(tokenizer: Tokenizer) -> Self {
+    fn new() -> Self {
         Self {
-            tokens: tokenizer.tokens,
+            defs: HashMap::with_capacity(10),
+            in_str: false,
+            strs: Vec::new(),
+            op: None,
         }
     }
 
-    fn eval(self) {
-        let mut in_str = false;
-        let mut cur_str = String::new();
-        let mut op = &self.tokens[0..0];
-        for (i, token) in self.tokens.iter().enumerate() {
-            println!("{:?} {:?} {:?} {:?} ", in_str, token.content(), op, cur_str);
+    fn eval(&mut self, tokens: Vec<Token>) {
+        for (i, token) in tokens.iter().enumerate() {
+            // println!("{:?} {:?} {:?} {:?} ", in_str, token.content(), op, cur_str);
 
-            if in_str {
+            if self.in_str {
                 if token.content() == "]" {
-                    in_str = false;
+                    self.in_str = false
                 } else {
-                    cur_str.push_str(token.content());
+                    self.strs.last_mut().unwrap().push_str(token.content());
                 }
             } else if token.content() == "[" {
-                in_str = true;
+                self.in_str = true;
+                self.strs.push(String::new());
             } else if discriminant(&token.t()) == discriminant(&TokenType::Break) {
-                println!("---------------break");
-                if op.len() == 1 && op[0].content() == "print" {
-                    println!("{}", cur_str);
-                    op = &self.tokens[0..0];
+                if let Some(t) = &self.op {
+                    if t.content() == "print" {
+                        println!("{}", self.strs[0]);
+                        self.op = None;
+                        self.strs.clear();
+                    }
                 }
             } else if discriminant(&token.t()) == discriminant(&TokenType::Text) {
-                op = &self.tokens[i..=i];
+                self.op = Some(tokens[i].clone());
             }
         }
     }
