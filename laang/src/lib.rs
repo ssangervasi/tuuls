@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::io;
-use std::io::BufRead;
+use std::io::{BufRead, Write};
 use std::mem::discriminant;
 use std::path::Path;
 
@@ -9,11 +9,13 @@ use lazy_static::lazy_static;
 use regex::Regex;
 use unicode_segmentation::UnicodeSegmentation;
 
-pub struct CliOptions {
+#[derive(Debug)]
+pub struct CliOptions<W: Write> {
 	pub path: String,
+	pub stdout: W,
 }
 
-pub fn eval(opts: &CliOptions) {
+pub fn eval<W: Write>(opts: &mut CliOptions<W>) {
 	let fpath = Path::new(&opts.path);
 	println!("Path: {:?}", fpath);
 
@@ -37,7 +39,7 @@ pub fn eval(opts: &CliOptions) {
 	println!("---------");
 	println!("Result:");
 
-	Evaluator::new().eval(tokenizer.tokens);
+	Evaluator::new(opts).eval(tokenizer.tokens);
 }
 
 lazy_static! {
@@ -149,7 +151,7 @@ impl Tokenizer {
 
 #[derive(Debug, Clone)]
 enum Statement {
-	Assign(Token),
+	// Assign(Token),
 	Call(Token),
 	Empty,
 }
@@ -161,22 +163,24 @@ enum Expression {
 }
 
 #[derive(Debug)]
-struct Evaluator {
+struct Evaluator<'opts, W: Write> {
 	defs: HashMap<String, String>,
 	exprs: Vec<Expression>,
 	expr: Expression,
 	strs: Vec<String>,
 	statement: Statement,
+	options: &'opts mut CliOptions<W>,
 }
 
-impl Evaluator {
-	fn new() -> Self {
+impl<'opts, W: Write> Evaluator<'opts, W> {
+	fn new(options: &'opts mut CliOptions<W>) -> Self {
 		Self {
 			defs: HashMap::with_capacity(10),
 			expr: Expression::Empty,
 			exprs: Vec::new(),
 			strs: Vec::new(),
 			statement: Statement::Empty,
+			options,
 		}
 	}
 
@@ -192,12 +196,13 @@ impl Evaluator {
 					// self.expr.0.push(token);
 					v.push(token.clone());
 				}
+			} else if let Statement::Empty = self.statement {
 			} else if token.content() == "[" {
 				self.expr = Expression::Collection(Vec::new());
 			} else if token.is(TokenType::Break) {
 				if let Statement::Call(t) = &self.statement {
 					if t.content() == "print" {
-						println!("{}", join(&self.exprs));
+						writeln!(self.options.stdout, "{}", join(&self.exprs)).unwrap();
 						self.statement = Statement::Empty;
 						self.exprs.clear();
 					}
