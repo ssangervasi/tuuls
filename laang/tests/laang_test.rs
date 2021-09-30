@@ -15,7 +15,7 @@ fn test_vars() {
 	};
 	eval(&mut opts);
 	let out: String = String::from_utf8(opts.stdout).unwrap();
-	assert_that!(out).is_equal_to("Hello world family 🗺".to_string());
+	assert_that!(out).is_equal_to("Hello world family 🗺\n".to_string());
 	// let out = opts.stdout;
 	// assert_that!(out).is_equal_to(Vec::from("Asdf"));
 }

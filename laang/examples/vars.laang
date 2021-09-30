@@ -1,4 +1,3 @@
-[h w] [[Hello] [world]]
+[hw] [Hello world]
 [👪] [family]
-[p[a]] print a
-p [h w 👪 🗺]
+print hw [ ] 👪 [ 🗺]

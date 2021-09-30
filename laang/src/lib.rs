@@ -102,6 +102,14 @@ impl Token {
 			Empty => "",
 		}
 	}
+
+	fn is_open(&self) -> bool {
+		self.content() == "["
+	}
+
+	fn is_close(&self) -> bool {
+		self.content() == "]"
+	}
 }
 
 #[derive(Debug)]
@@ -151,23 +159,30 @@ impl Tokenizer {
 
 #[derive(Debug, Clone)]
 enum Statement {
-	// Assign(Token),
-	Call(Token),
 	Empty,
+	Assign(Token),
+	Call(Token),
 }
 
 #[derive(Debug, Clone)]
 enum Expression {
-	Collection(Vec<Token>),
 	Empty,
+	Lookup(Token),
+	Collection(Vec<Token>),
+}
+
+#[derive(Debug, Clone)]
+enum Phase {
+	Statement,
+	Expressions,
 }
 
 #[derive(Debug)]
 struct Evaluator<'opts, W: Write> {
 	defs: HashMap<String, String>,
-	exprs: Vec<Expression>,
-	expr: Expression,
-	strs: Vec<String>,
+	phase: Phase,
+	expression: Expression,
+	expressions: Vec<Expression>,
 	statement: Statement,
 	options: &'opts mut CliOptions<W>,
 }
@@ -176,9 +191,9 @@ impl<'opts, W: Write> Evaluator<'opts, W> {
 	fn new(options: &'opts mut CliOptions<W>) -> Self {
 		Self {
 			defs: HashMap::with_capacity(10),
-			expr: Expression::Empty,
-			exprs: Vec::new(),
-			strs: Vec::new(),
+			phase: Phase::Statement,
+			expression: Expression::Empty,
+			expressions: Vec::new(),
 			statement: Statement::Empty,
 			options,
 		}
@@ -186,45 +201,89 @@ impl<'opts, W: Write> Evaluator<'opts, W> {
 
 	fn eval(&mut self, tokens: Vec<Token>) {
 		for token in tokens.iter() {
-			// println!("{:?} {:?} {:?} {:?} ", in_str, token.content(), op, cur_str);
+			// When we reach a break, evaluate it.
+			if token.is(TokenType::Break) {
+				println!("---------");
+				println!("Stmt: {:?}", self.statement);
+				println!("Exprs: {:?}", self.expressions);
+				println!("Defs: {:?}", self.defs);
 
-			if let Expression::Collection(v) = &mut self.expr {
-				if token.content() == "]" {
-					self.exprs.push(Expression::Collection(v.clone()));
-					self.expr = Expression::Empty;
-				} else {
-					// self.expr.0.push(token);
-					v.push(token.clone());
-				}
-			} else if let Statement::Empty = self.statement {
-			} else if token.content() == "[" {
-				self.expr = Expression::Collection(Vec::new());
-			} else if token.is(TokenType::Break) {
-				if let Statement::Call(t) = &self.statement {
+				if let Statement::Assign(t) = &self.statement {
+					self.defs.insert(t.content().to_string(), self.join());
+				} else if let Statement::Call(t) = &self.statement {
 					if t.content() == "print" {
-						writeln!(self.options.stdout, "{}", join(&self.exprs)).unwrap();
-						self.statement = Statement::Empty;
-						self.exprs.clear();
+						writeln!(self.options.stdout, "{}", self.join()).unwrap();
 					}
 				}
-			} else if token.is(TokenType::Text) {
-				self.statement = Statement::Call(token.clone());
+
+				self.phase = Phase::Statement;
+				self.statement = Statement::Empty;
+				self.expression = Expression::Empty;
+				self.expressions.clear();
+			// First we need a statement.
+			} else if let Phase::Statement = self.phase {
+				if let Statement::Empty = self.statement {
+					if token.is(TokenType::Text) {
+						self.statement = Statement::Call(token.clone());
+						self.phase = Phase::Expressions;
+					} else if token.is_open() {
+						self.statement = Statement::Assign(Token::Empty);
+					}
+				// Then we need to fill an assignment statement.
+				} else if let Statement::Assign(assignment_token) = &self.statement {
+					if let Token::Empty = assignment_token {
+						if token.is(TokenType::Text) {
+							self.statement = Statement::Assign(token.clone());
+						}
+					} else if token.is_close() {
+						self.phase = Phase::Expressions;
+					}
+				}
+			// Then we need an expression.
+			} else if let Phase::Expressions = self.phase {
+				if let Expression::Empty = self.expression {
+					if token.is(TokenType::Text) {
+						self.expressions.push(Expression::Lookup(token.clone()));
+						self.expression = Expression::Empty;
+					} else if token.is_open() {
+						self.expression = Expression::Collection(Vec::new());
+					}
+				// We continue building an expression.
+				} else if let Expression::Collection(expression_tokens) = &mut self.expression {
+					if token.is_close() {
+						self
+							.expressions
+							.push(Expression::Collection(expression_tokens.clone()));
+						self.expression = Expression::Empty;
+					} else {
+						expression_tokens.push(token.clone());
+					}
+				}
 			}
 		}
 	}
-}
 
-fn join(exprs: &[Expression]) -> String {
-	exprs
-		.iter()
-		.map(|expr| match expr {
-			Expression::Collection(tokens) => tokens
-				.iter()
-				.map(|token| token.content())
-				.collect::<Vec<&str>>()
-				.join(""),
-			Expression::Empty => "".to_string(),
-		})
-		.collect::<Vec<String>>()
-		.join("")
+	fn join(&self) -> String {
+		self
+			.expressions
+			.iter()
+			.map(|expr| match expr {
+				Expression::Collection(tokens) => tokens
+					.iter()
+					.map(|token| token.content())
+					.collect::<Vec<&str>>()
+					.join(""),
+				Expression::Lookup(t) => {
+					let s: String = self
+						.defs
+						.get(t.content())
+						.unwrap_or_else(|| panic!("Invalid lookup: {}", t.content()))
+						.to_string();
+					s
+				}
+				Expression::Empty => "".to_string(),
+			})
+			.collect::<Vec<String>>()
+			.join("")
+	}
 }
