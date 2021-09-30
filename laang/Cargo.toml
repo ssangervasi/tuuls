@@ -10,3 +10,10 @@ clap = "2.33.3"
 unicode-segmentation = "1.7.0"
 regex = "1.4.2"
 lazy_static = "1.4.0"
+
+[dev-dependencies]
+spectral = "0.6.0"
+
+[[test]]
+name = "laang_test"
+path = "tests/laang_test.rs"

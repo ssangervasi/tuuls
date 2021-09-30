@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
 
-cargo run \
-	examples/hello_world.laang
-	# examples/vars.laang
+cargo run examples/hello_world.laang
+echo "====="
+cargo run examples/vars.laang
